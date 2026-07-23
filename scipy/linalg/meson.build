@@ -314,6 +314,7 @@ python_sources = [
   '_matfuncs.py',
   '_matfuncs_inv_ssq.py',
   '_matfuncs_sqrtm.py',
+  '_fsrd.py',
   '_misc.py',
   '_procrustes.py',
   '_sketches.py',

@@ -110,6 +110,17 @@ Decompositions
    `scipy.linalg.interpolative` -- Interpolative matrix decompositions
 
 
+Dynamic mode / Koopman decomposition
+====================================
+
+.. autosummary::
+   :toctree: generated/
+
+   fsrd - Fuzzy Spectral Region Decomposition (multi-operator DMD/Koopman)
+   FSRDResult - Result object returned by fsrd
+   FSRDRegion - A single local operator produced by fsrd
+
+
 Matrix Functions
 ================
 
@@ -216,6 +227,7 @@ from .lapack import *
 from ._special_matrices import *
 from ._solvers import *
 from ._procrustes import *
+from ._fsrd import *
 from ._decomp_update import *
 from ._sketches import *
 from ._decomp_cossin import *

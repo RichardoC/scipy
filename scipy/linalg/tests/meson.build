@@ -17,6 +17,7 @@ python_sources = [
   'test_decomp_update.py',
   'test_extending.py',
   'test_fblas.py',
+  'test_fsrd.py',
   'test_interpolative.py',
   'test_lapack.py',
   'test_matfuncs.py',
