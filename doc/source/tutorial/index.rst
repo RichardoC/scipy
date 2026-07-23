@@ -63,6 +63,7 @@ There are also additional user guides for these topics:
 
 - :doc:`./arpack` - Eigenvalue problem solver using iterative methods
 - :doc:`./csgraph` - Compressed Sparse Graph Routines
+- :doc:`./fsrd` - Fuzzy Spectral Region Decomposition (multi-operator DMD/Koopman)
 - :ref:`scipy_parallel_execution`
 - :ref:`scipy_thread_safety`
 - :ref:`security`
@@ -86,6 +87,7 @@ There are also additional user guides for these topics:
    stats
    arpack
    csgraph
+   fsrd
    parallel_execution
    security
    thread_safety
