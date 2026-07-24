@@ -3,7 +3,10 @@ import pytest
 from numpy.testing import assert_allclose
 
 from scipy.linalg import fsrd, FSRDResult, FSRDRegion
-from scipy.linalg._fsrd import _Node, _try_split, _prune
+from scipy.linalg._fsrd import (
+    _Node, _try_split, _prune, _fit_node, _bic, _region_k, _sigmoid,
+    _topological_transform, _row_spans,
+)
 from scipy._lib._array_api import make_xp_test_case, xp_assert_close
 
 
@@ -195,3 +198,70 @@ class TestFSRDInternals:
                                  u1, u2, 1.0, 1e-4, 1e-4, 0.05)
         pruned = _prune(x, [left, right], 1.0, 1.5, 1e-4, 1e-4)
         assert len(pruned) == 1
+
+    # ------------------------------------------------------------------
+    # Supplementary-material fidelity checks (audit regression guards).
+    # ------------------------------------------------------------------
+    def test_sigmoid_matches_sm_s14(self):
+        # SM eq (S14): Omega = 1 / (1 + exp(-tau (v0 + v1 u1 + v2 u2))).
+        u1 = np.linspace(0, 1, 5)
+        u2 = np.linspace(0, 1, 7)
+        v = np.array([-0.3, 1.0, -0.5])
+        tau = 3.7
+        z = v[0] + v[1] * u1[:, None] + v[2] * u2[None, :]
+        expected = 1.0 / (1.0 + np.exp(-tau * z))
+        got = _sigmoid(u1, u2, v, tau)
+        assert_allclose(got, expected, atol=1e-14)
+        # SM eq (S19): a split and its complement form a partition of unity.
+        assert_allclose(got + (1.0 - got), np.ones_like(got), atol=1e-14)
+
+    def test_bic_matches_sm_s37_s39(self):
+        # SM eqs (S37)-(S39) with the documented dropped constant:
+        # BIC = N log(SSE/N) + k log(N).
+        sse, n, k = 12.34, 200, 5.0
+        expected = n * np.log(sse / n + np.finfo(float).tiny) + k * np.log(n)
+        assert_allclose(_bic(sse, n, k), expected, rtol=1e-12)
+
+    def test_k_scales_with_level_sm_s45(self):
+        # SM eq (S45): k = sum_i r_i Theta^{L_i - 1}; with the root at code
+        # level 0 this is r_i * Theta^level.
+        x = np.random.default_rng(1).standard_normal((8, 60))
+        theta = 2.0
+        root = _Node(np.ones(x.shape), 0, [])
+        _fit_node(x, root, 1.0, 1e-4, 1e-4)
+        assert_allclose(_region_k(root, theta),
+                        root.model[0].size * theta ** 0)
+        deep = _Node(np.ones(x.shape), 2, [])
+        _fit_node(x, deep, 1.0, 1e-4, 1e-4)
+        assert_allclose(_region_k(deep, theta),
+                        deep.model[0].size * theta ** 2)
+
+    def test_topological_transform_sm11_branches(self):
+        # SM-11 forward transform: single-element rows become constant,
+        # full rows pass through, partial runs are interpolated to width q.
+        block = np.arange(1, 16, dtype=float).reshape(3, 5)
+        mask = np.array([[0, 0, 1, 0, 0],
+                         [1, 1, 1, 1, 1],
+                         [0, 1, 1, 1, 0]], dtype=bool)
+        spans = _row_spans(mask)
+        assert spans == [(2, 2), (0, 4), (1, 3)]
+        q = 5
+        y = _topological_transform(block, spans, q)
+        # step 5: single in-region element -> whole row equals that value
+        assert_allclose(y[0], block[0, 2])
+        # step 6: full-width run -> identity
+        assert_allclose(y[1], block[1])
+        # step 7: partial run interpolated from its length up to q
+        seg = block[2, 1:4]
+        xp_ = np.linspace(0.0, 1.0, seg.size)
+        xq_ = np.linspace(0.0, 1.0, q)
+        assert_allclose(y[2], np.interp(xq_, xp_, seg))
+
+    def test_default_hyperparameters_match_sm_table_s1(self):
+        # SM Table S1: mu=0.05, eta=1e-4, r=1e-4, Theta=1.5 (default).
+        import inspect
+        d = {k: v.default for k, v in inspect.signature(fsrd).parameters.items()}
+        assert d['smoothness'] == 0.05
+        assert d['eta'] == 1e-4
+        assert d['rcond'] == 1e-4
+        assert d['theta'] == 1.5
