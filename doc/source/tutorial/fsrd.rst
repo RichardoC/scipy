@@ -14,9 +14,10 @@ whose behaviour changes across the record (different dynamical regimes, a
 chaotic attractor with more than one lobe, a transient followed by a limit
 cycle).  Fuzzy Spectral Region Decomposition instead partitions the snapshot
 matrix into fuzzy, overlapping regions, fits a local DMD operator in each, and
-blends the local reconstructions with smooth membership weights.  A region is
-only split when doing so lowers the Bayesian information criterion, so the
-number of local operators is chosen automatically from the data.
+blends the local reconstructions with smooth membership weights.  How many local
+operators to use is chosen automatically from the data, by comparing the
+Bayesian information criterion of the whole model as the tree is grown and again
+as it is pruned back.
 
 The input layout
 ----------------
@@ -130,16 +131,21 @@ Choosing parameters
 -------------------
 
 - ``max_depth`` bounds how many times the tree may split (``0`` is plain DMD).
-  Deeper trees can capture more regimes but cost more; growth stops early once
-  splits no longer improve the BIC.
+  Deeper trees can capture more regimes but cost more; growth also stops on its
+  own once a whole level no longer improves the BIC.  Each level doubles the
+  regions that are grown before pruning, so raise it with care.
 - ``theta`` (:math:`\Theta \ge 1`) is the complexity penalty; larger values
   favour fewer regions.
 - ``oblique=False`` restricts splits to axis-aligned (time or coordinate)
   boundaries, which is faster; the default ``True`` also allows diagonal region
   boundaries.
 - ``rcond`` and ``eta`` control the per-region SVD truncation and the membership
-  cutoff; ``prune=True`` runs a backward pass that merges regions whose split no
-  longer pays for itself.
+  cutoff.
+- ``prune=True`` (the default) runs the backward pass that performs the model
+  selection, merging regions back together while that does not worsen the BIC.
+  With ``prune=False`` you get the deliberately over-grown tree the forward pass
+  produced, which usually has more regions than the data supports; that setting
+  is for inspecting the growth, not for modelling.
 
 See the :func:`fsrd` reference for the full description and the algorithm's
 provenance.

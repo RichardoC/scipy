@@ -8,9 +8,9 @@ fuzzy membership functions, rather than by a single global operator.
 The method (arXiv:2607.17990) recursively partitions the ``(row, column)``
 index grid of a snapshot matrix into fuzzy, overlapping regions along oblique
 or axis-aligned boundaries, fits a regularized exact-DMD operator inside each
-region, and keeps a split only when it lowers the Bayesian information
-criterion.  Local reconstructions are recombined with sigmoidal membership
-weights that form a partition of unity.
+region, and selects how many regions to keep by the Bayesian information
+criterion of the whole model.  Local reconstructions are recombined with
+sigmoidal membership weights that form a partition of unity.
 """
 import numpy as np
 from dataclasses import dataclass
@@ -474,32 +474,39 @@ def _try_split(a, node, v, sid, u1, u2, dt, rcond, eta, mu):
 
 
 def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
-    """Grow the decomposition tree, splitting where the model's BIC improves.
+    """Grow the decomposition tree one complete level at a time.
 
-    A candidate split is accepted only when replacing the split node by its two
-    children lowers the information criterion of the *whole* model, the other
-    leaves being held fixed (see `_model_bic`).
+    Following [1]_, every splittable leaf of a level is split -- each at the
+    position that minimises the model's information criterion -- before the
+    level as a whole is assessed, and growth continues while a completed level
+    lowers that criterion.  The pass therefore stops one level *after* the best
+    one, deliberately over-growing the tree; `_prune` then selects the regions
+    that are kept.  Returning the over-grown tree is what allows the backward
+    pass to reach models that a greedy split-by-split rule cannot.
 
-    Growth stops at ``max_depth``, when a level produces no accepted split, or
-    when the total number of regions reaches ``_MAX_NODES`` (a hard cost cap
-    independent of the hyper-parameters).
+    Growth stops at ``max_depth``, when a level admits no split at all, when a
+    completed level fails to improve the criterion, or when the number of
+    regions reaches ``_MAX_NODES`` (a hard cost cap independent of the
+    hyper-parameters).
     """
     n = a.size
     root = _Node(np.ones(a.shape), 0, [])
     _fit_node(a, root, dt, rcond, eta)
     leaves = [root]
+    if root.model is None:
+        return leaves          # nothing to fit (e.g. an all-zero input)
+    best_bic = _model_bic(a, leaves, n, dt, theta)
     sid = 0
     for _ in range(max_depth):
         new_leaves = []
         changed = False
         for idx, leaf in enumerate(leaves):
             if (leaf.model is None or leaf.bbox is None
-                    or len(new_leaves) + 1 >= _MAX_NODES):
+                    or len(new_leaves) + 2 > _MAX_NODES):
                 new_leaves.append(leaf)
                 continue
             # the rest of the model: leaves already kept plus those still to come
             others = new_leaves + leaves[idx + 1:]
-            keep_bic = _model_bic(a, others + [leaf], n, dt, theta)
             best = None
             for v in _candidate_vectors(leaf, u1, u2, oblique):
                 pair = _try_split(a, leaf, v, sid, u1, u2, dt, rcond, eta, mu)
@@ -511,29 +518,35 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
                                        theta)
                 if best is None or split_bic < best[0]:
                     best = (split_bic, child_a, child_b)
-            if best is not None and best[0] < keep_bic:
+            if best is None:
+                new_leaves.append(leaf)
+            else:
+                # split the level through: whether the extra regions are worth
+                # keeping is decided for the level, and then by `_prune`
                 new_leaves.extend([best[1], best[2]])
                 changed = True
-            else:
-                new_leaves.append(leaf)
-        leaves = new_leaves
-        if not changed or len(leaves) >= _MAX_NODES:
+        if not changed:
             break
+        leaves = new_leaves
+        level_bic = _model_bic(a, leaves, n, dt, theta)
+        if level_bic >= best_bic or len(leaves) >= _MAX_NODES:
+            break                     # this level overshoots; hand it to `_prune`
+        best_bic = level_bic
     return leaves
 
 
 def _prune(a, leaves, dt, theta, rcond, eta):
-    """Backward elimination: collapse a sibling pair into its parent while doing
-    so does not raise the whole model's BIC.
+    """Backward elimination: collapse sibling pairs back into their parent while
+    that does not raise the whole model's BIC.
 
-    In [1]_ this pass does the model selection, because there the forward pass
-    deliberately over-grows a fully specified tree.  `_forward_pass` here instead
-    accepts a split only when it already improves the whole model's BIC, and no
-    such split can later be collapsed: the BIC gap that justified it only widens
-    as the remaining error falls, so this pass is a safety net that does not
-    trigger after a completed forward pass.  It is retained because it *is*
-    reachable for an externally supplied set of leaves, and it keeps the
-    ``prune`` argument meaningful for callers who assemble a tree by hand.
+    This pass performs the model selection, `_forward_pass` having deliberately
+    over-grown the tree, as in [1]_.  It runs the tree in reverse: each
+    child-parent group is reviewed individually, deepest level first, comparing
+    the model with and without that pair of children.  Sweeps repeat until a
+    full sweep collapses nothing, so a parent formed by one collapse can itself
+    be folded away with its sibling on a later sweep and a whole branch can
+    disappear.  [1]_ notes that the resulting tree is not uniquely determined by
+    this procedure.
     """
     n = a.size
     changed = True
@@ -545,12 +558,13 @@ def _prune(a, leaves, dt, theta, rcond, eta):
             if not leaf.path:
                 continue
             groups.setdefault(leaf.path[-1][3], []).append(leaf)
-        for sibs in groups.values():
-            if len(sibs) != 2 or any(s not in leaves for s in sibs):
-                continue
-            parent_path = sibs[0].path[:-1]
-            phi = sibs[0].phi + sibs[1].phi
-            parent = _Node(phi, sibs[0].level - 1, parent_path)
+        pairs = sorted((g for g in groups.values() if len(g) == 2),
+                       key=lambda g: -g[0].level)
+        for sibs in pairs:
+            if any(s not in leaves for s in sibs):
+                continue              # already folded away earlier this sweep
+            parent = _Node(sibs[0].phi + sibs[1].phi, sibs[0].level - 1,
+                           sibs[0].path[:-1])
             _fit_node(a, parent, dt, rcond, eta)
             if parent.model is None:
                 continue
@@ -559,7 +573,6 @@ def _prune(a, leaves, dt, theta, rcond, eta):
                     <= _model_bic(a, others + sibs, n, dt, theta)):
                 leaves = others + [parent]
                 changed = True
-                break
     return leaves
 
 
@@ -612,10 +625,11 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     operator, ``fsrd`` recursively partitions the ``(row, column)`` index grid
     of the snapshot matrix into fuzzy, overlapping regions -- along oblique or
     axis-aligned boundaries -- and fits a regularized exact-DMD operator inside
-    each.  A split is kept only when it lowers the Bayesian information
-    criterion (BIC), so the number of local operators is selected adaptively.
-    The local reconstructions are recombined with sigmoidal membership weights
-    that form a partition of unity.
+    each.  How many regions to keep is selected from the data by the Bayesian
+    information criterion (BIC) of the whole model, evaluated as the tree is
+    grown a level at a time and again as it is pruned back.  The local
+    reconstructions are recombined with sigmoidal membership weights that form a
+    partition of unity.
 
     Parameters
     ----------
@@ -628,8 +642,12 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
         discrete DMD eigenvalues to continuous-time ones.  Default is 1.
     max_depth : int, optional
         Maximum depth of the decomposition tree, in ``[0, 24]``.  ``0`` fits a
-        single global operator.  The realised depth is usually smaller because
-        splits that do not improve the BIC are rejected.  Default is 3.
+        single global operator.  It is an upper bound: growth also stops once a
+        level no longer improves the BIC, and the tree is then pruned back, so
+        the returned model is usually shallower.  Each level doubles the regions
+        that are grown, so on data that keeps admitting splits both the cost and
+        the peak memory roughly double per level; raise it with care.  Default
+        is 3.
     theta : float, optional
         BIC complexity-scaling parameter :math:`\Theta \ge 1`; the
         model-complexity penalty of a region grows as :math:`\Theta^{L-1}` with
@@ -654,9 +672,10 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
         considered, which is faster.
     prune : bool, optional
         Whether to run the backward-elimination pruning pass after growing the
-        tree.  Default True.  Because a split is only grown when it improves the
-        whole model's criterion, this pass acts as a safety net and in practice
-        leaves the grown tree unchanged; see Notes.
+        tree.  Default True.  This pass performs the model selection, so with
+        ``prune=False`` the deliberately over-grown tree left by the forward pass
+        is returned unchanged and will usually hold more regions than the data
+        supports; that setting is intended for diagnostics.  See Notes.
     forecast : int, optional
         Number of additional columns to extrapolate beyond the input.  Default
         0.  ``M * (T + forecast)`` must not exceed 5e7.
@@ -725,7 +744,10 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
 
     - Split orientation is chosen from the paper's four candidate vectors and
       the boundary offset from the fixed fractions ``(0.35, 0.5, 0.65)`` of the
-      region, rather than refined by particle-swarm optimization.
+      region, rather than refined by particle-swarm optimization, and candidates
+      are ranked by the model's information criterion rather than by the paper's
+      weighted-NRMSE net error.  This tends to find better-fitting partitions,
+      and so can retain more regions than the paper reports for a given system.
     - The ridge parameter is chosen by generalized cross-validation rather than
       the paper's BIC fixed-point iteration.  It governs the SVD row-pruning
       selection only and does not shrink the returned local operator, so on
@@ -736,11 +758,18 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     - A region's operator is fitted to its snapshot block directly, rather than
       to the block pre-multiplied by the region's membership; the membership
       weights the model selection and the final blend instead.
-    - Growth is greedy: a split is kept only if it already improves the whole
-      model's criterion, whereas [1]_ over-grows a fully specified tree and
-      selects with the backward pass.  Both optimize the same criterion, but the
-      search here explores fewer partitions and, as a consequence, the backward
-      pass cannot collapse anything the forward pass produced.
+
+    Model order is selected as in [1]_, in two passes over the whole model's
+    criterion.  The forward pass splits every splittable region of a level
+    before assessing the level, and continues while a completed level lowers the
+    criterion; when it is the level comparison that stops the growth, the tree is
+    left deliberately over-grown by one level.  The backward pass then runs the
+    tree in reverse, reviewing each pair of children deepest-level first and
+    collapsing it back into its parent whenever that does not raise the
+    criterion, until a full sweep changes nothing.  [1]_ notes that the resulting
+    tree is not uniquely determined by this procedure.  Growth also stops at
+    ``max_depth`` or at an internal cap on the number of regions, in which case
+    the tree is not over-grown.
 
     The reconstruction and forecast use the fitted eigenvalues as returned in
     ``regions[i].eigenvalues`` (no clipping); a region's in-window
@@ -751,15 +780,18 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     multi-region forecast that would rely on an oblique region past the data is
     bounded and finite but not accuracy-guaranteed.
 
-    A split is accepted, and a sibling pair collapsed, only when doing so
-    improves the information criterion of the *complete* model rather than that
-    of the region being split, as in [1]_; the summed membership-weighted region
-    errors are used as an additive proxy for the global error, which they equal
-    in the crisp (``smoothness -> 0``) limit.  The memberships weight the
-    squared errors linearly, so that a split lowers the criterion only by
-    fitting the data better.  The reported ``bic`` is computed from the true
-    global reconstruction error and drops an additive constant, so it is
-    internally consistent but not comparable to a BIC from another tool.
+    Every decision of both passes is taken on the information criterion of the
+    *complete* model, never on that of one region in isolation, as in [1]_; the
+    summed membership-weighted region errors are used as an additive proxy for
+    the global error, which they equal in the crisp (``smoothness -> 0``) limit.
+    The memberships weight the squared errors linearly, so that a split lowers
+    the criterion only by fitting the data better.  The reported ``bic`` is a
+    diagnostic computed differently: it uses the true global reconstruction error
+    and drops an additive constant, so it is not comparable to a BIC from another
+    tool, and because it is not the quantity the two passes minimise it need not
+    order two models the same way they do -- an over-grown tree obtained with
+    ``prune=False`` can carry the lower reported ``bic``.  Use it to compare fits
+    of the same model order, not to choose a model order.
 
     References
     ----------

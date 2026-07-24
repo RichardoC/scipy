@@ -7,6 +7,7 @@ from scipy.linalg._fsrd import (
     FSRDResult, FSRDRegion,
     _Node, _try_split, _prune, _fit_node, _bic, _region_k, _sigmoid,
     _topological_transform, _row_spans, _region_sse, _node_local_recon,
+    _forward_pass,
 )
 from scipy._lib._array_api import make_xp_test_case, xp_assert_close
 
@@ -54,6 +55,26 @@ class TestFSRD:
         counts = [fsrd(xp.asarray(x), max_depth=d).n_regions
                   for d in (0, 2, 4)]
         assert counts == [1, 1, 1]
+
+    @pytest.mark.parametrize('shape', [(4, 10), (2, 2)])
+    def test_degenerate_all_zero_input(self, xp, shape):
+        # Nothing can be fitted, so no region is returned -- but the call must
+        # still succeed and give a finite, correctly shaped reconstruction.
+        res = fsrd(xp.zeros(shape), forecast=3)
+        assert res.n_regions == 0
+        assert res.reconstruction.shape == (shape[0], shape[1] + 3)
+        assert bool(np.all(np.isfinite(np.asarray(res.reconstruction))))
+
+    def test_prune_selects_the_model_order(self, xp):
+        # `prune` performs the model selection: without it the over-grown tree
+        # the forward pass produced is returned, so it can only have at least as
+        # many regions, and on a single operator pruning recovers exactly one.
+        for x in (_orbit(_rot(0.3), [1.0, 0.0], 80), _two_regime()):
+            selected = fsrd(xp.asarray(x), max_depth=3)
+            grown = fsrd(xp.asarray(x), max_depth=3, prune=False)
+            assert grown.n_regions >= selected.n_regions
+        assert fsrd(xp.asarray(_orbit(_rot(0.3), [1.0, 0.0], 80)),
+                    max_depth=3).n_regions == 1
 
     @pytest.mark.parametrize('data', ['two_regime', 'noisy'])
     def test_extra_regions_must_pay_for_themselves(self, xp, data):
@@ -232,6 +253,20 @@ class TestFSRDInternals:
         left, right = _try_split(x, root, np.array([-0.5, 0.0, 1.0]), 0,
                                  u1, u2, 1.0, 1e-4, 1e-4, 0.05)
         pruned = _prune(x, [left, right], 1.0, 1.5, 1e-4, 1e-4)
+        assert len(pruned) == 1
+
+    def test_forward_pass_overgrows_and_prune_selects(self):
+        # The forward pass must overshoot (it splits a level through before
+        # assessing it) and the backward pass must do the selection: on a single
+        # linear operator the grown tree has more than one leaf and pruning
+        # folds it back to exactly one.
+        x = _orbit(_rot(0.3), [1.0, 0.0], 80)
+        m, t = x.shape
+        u1 = np.linspace(0, 1, m)
+        u2 = np.linspace(0, 1, t)
+        grown = _forward_pass(x, u1, u2, 1.0, 1e-4, 1e-4, 0.05, 1.5, 3, True)
+        pruned = _prune(x, grown, 1.0, 1.5, 1e-4, 1e-4)
+        assert len(pruned) < len(grown), 'pruning should select a smaller tree'
         assert len(pruned) == 1
 
     def test_region_sse_weights_membership_linearly(self):
