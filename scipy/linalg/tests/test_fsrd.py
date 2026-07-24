@@ -6,7 +6,7 @@ from scipy.linalg import fsrd
 from scipy.linalg._fsrd import (
     FSRDResult, FSRDRegion,
     _Node, _try_split, _prune, _fit_node, _bic, _region_k, _sigmoid,
-    _topological_transform, _row_spans,
+    _topological_transform, _row_spans, _region_sse, _node_local_recon,
 )
 from scipy._lib._array_api import make_xp_test_case, xp_assert_close
 
@@ -44,6 +44,40 @@ class TestFSRD:
         # imaginary part of omega = ln(lambda)/dt recovers the rotation freq
         assert_allclose(np.abs(res.regions[0].eigenvalues.imag).max(), 0.3,
                         atol=1e-6)
+
+    def test_no_oversegmentation_of_one_operator(self, xp):
+        # One operator must not be split up as the depth budget grows, even on a
+        # large grid.  The criterion is evaluated over the whole model, so a
+        # split that does not improve the global fit is rejected however many
+        # cells the (here negligible) residual is spread over.
+        x = np.repeat(_orbit(_rot(0.3, 0.99), [1.0, 0.0], 120), 30, axis=0)
+        counts = [fsrd(xp.asarray(x), max_depth=d).n_regions
+                  for d in (0, 2, 4)]
+        assert counts == [1, 1, 1]
+
+    @pytest.mark.parametrize('data', ['two_regime', 'noisy'])
+    def test_extra_regions_must_pay_for_themselves(self, xp, data):
+        # Region count must converge with depth, and any region the deeper model
+        # adds has to buy accuracy -- the error must never stay flat while the
+        # count grows (the signature of splitting for its own sake).
+        if data == 'two_regime':
+            x = _two_regime()
+        else:
+            rng = np.random.default_rng(1234)
+            x = (np.repeat(_orbit(_rot(0.3, 0.99), [1.0, 0.0], 90), 12, axis=0)
+                 + 1e-3 * rng.standard_normal((24, 90)))
+
+        def run(depth):
+            res = fsrd(xp.asarray(x), max_depth=depth)
+            err = float(np.linalg.norm(np.asarray(res.reconstruction) - x))
+            return res.n_regions, err
+
+        n_mid, err_mid = run(3)
+        n_deep, err_deep = run(6)
+        assert n_deep == n_mid, 'region count must converge with depth'
+        if n_deep > 1:
+            n_one, err_one = run(0)
+            assert err_deep < err_one, 'extra regions must reduce the error'
 
     def test_eigenvalues_match_exact_dmd(self, xp):
         # On a pure rotation the DMD eigenvalues must be exp(+/- i theta).
@@ -199,6 +233,43 @@ class TestFSRDInternals:
                                  u1, u2, 1.0, 1e-4, 1e-4, 0.05)
         pruned = _prune(x, [left, right], 1.0, 1.5, 1e-4, 1e-4)
         assert len(pruned) == 1
+
+    def test_region_sse_weights_membership_linearly(self):
+        # The membership must weight the *squared* error, so that halving it
+        # halves the reported error.  Weighting the residual instead applies
+        # phi**2 (halving would quarter it), and since w**2 + (1-w)**2 <= 1 a
+        # fuzzy split would then lower the criterion without fitting anything
+        # better -- the mechanism behind over-segmentation.
+        x = _two_regime()
+        m, t = x.shape
+        full = _Node(np.ones((m, t)), 0, [])
+        _fit_node(x, full, 1.0, 1e-4, 1e-4)
+        half = _Node(0.5 * np.ones((m, t)), 0, [])
+        _fit_node(x, half, 1.0, 1e-4, 1e-4)
+        # uniform membership => identical bounding box, hence an identical fit
+        assert half.bbox == full.bbox
+        assert_allclose(_region_sse(x, half, 1.0),
+                        0.5 * _region_sse(x, full, 1.0), rtol=1e-10)
+
+    def test_split_of_unchanged_fit_does_not_lower_sse(self):
+        # Partition of unity (phi_left + phi_right == phi_parent) plus linear
+        # weighting means a split cannot reduce the criterion's error term
+        # unless the local fits actually improve.
+        x = _two_regime()
+        m, t = x.shape
+        u1 = np.linspace(0, 1, m)
+        u2 = np.linspace(0, 1, t)
+        root = _Node(np.ones((m, t)), 0, [])
+        _fit_node(x, root, 1.0, 1e-4, 1e-4)
+        left, right = _try_split(x, root, np.array([-0.5, 0.0, 1.0]), 0,
+                                 u1, u2, 1.0, 1e-4, 1e-4, 0.05)
+        # weight the *parent's* own residual by each child's membership: the two
+        # halves must add back up to the parent's error, to within the effect of
+        # each child's eta-truncated bounding box.
+        recon = _node_local_recon(root, 1.0, x.shape)
+        sq = np.abs(recon - x) ** 2
+        halves = float(np.sum(left.phi * sq) + np.sum(right.phi * sq))
+        assert_allclose(halves, _region_sse(x, root, 1.0), rtol=1e-10)
 
     # ------------------------------------------------------------------
     # Supplementary-material fidelity checks (audit regression guards).

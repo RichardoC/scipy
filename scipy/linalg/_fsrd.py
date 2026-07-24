@@ -322,7 +322,7 @@ class _Node:
     # split share a unique ``split_id``, which is how sibling pairs are found
     # during pruning (no object-identity tricks required).
     __slots__ = ('phi', 'level', 'path', 'model', 'bbox', 'oblique', 'spans',
-                 'split_vector')
+                 'split_vector', 'sse')
 
     def __init__(self, phi, level, path):
         self.phi = phi
@@ -333,6 +333,7 @@ class _Node:
         self.oblique = False
         self.spans = None
         self.split_vector = path[-1][0] if path else None
+        self.sse = None                       # cached `_region_sse` (see below)
 
 
 def _fit_node(a, node, dt, rcond, eta):
@@ -376,14 +377,40 @@ def _bic(sse, n, k):
 def _region_sse(a, node, dt):
     """Membership-weighted squared error of a node's local model.
 
-    Used only to *choose and accept* splits.  Because fuzzy memberships
-    overlap, the sum of per-region weighted errors approximates (and equals, in
-    the crisp limit) the true global SSE, which is used for the final reported
-    BIC.
+    The membership weights the *squared* error (rather than the residual), so
+    that the weights enter linearly.  Because a split's two children satisfy
+    ``phi_left + phi_right == phi_parent`` pointwise, the children's summed
+    weighted error then equals the parent's exactly whenever the underlying
+    reconstruction is unchanged: a split can only lower this term by actually
+    fitting the data better.  Weighting the residual instead would apply
+    ``phi**2``, and since ``w**2 + (1 - w)**2 <= 1`` any split would lower the
+    term for free, biasing the model-order selection towards more regions.
     """
     recon = _node_local_recon(node, dt, a.shape)
-    diff = node.phi * (recon - a)
-    return float(np.sum(np.abs(diff) ** 2))
+    return float(np.sum(node.phi * np.abs(recon - a) ** 2))
+
+
+def _leaf_sse(a, node, dt):
+    """`_region_sse` for a node, cached (the model and data never change)."""
+    if node.sse is None:
+        node.sse = _region_sse(a, node, dt)
+    return node.sse
+
+
+def _model_bic(a, nodes, n, dt, theta):
+    """Information criterion of a whole candidate model (all of its leaves).
+
+    Split and prune decisions compare this quantity, following the criterion of
+    [1]_, which is defined over the *complete* model rather than one region: the
+    memberships of the current leaves form a partition of unity, so the summed
+    membership-weighted errors are a convex combination of the local errors and
+    hence an additive proxy for the global error.  Judging a split by the split
+    node's error alone would instead reward shrinking a residual that is already
+    negligible in the full model, which drives over-segmentation.
+    """
+    sse = sum(_leaf_sse(a, nd, dt) for nd in nodes)
+    k = sum(_region_k(nd, theta) for nd in nodes)
+    return _bic(sse, n, k)
 
 
 def _region_k(node, theta):
@@ -447,7 +474,11 @@ def _try_split(a, node, v, sid, u1, u2, dt, rcond, eta, mu):
 
 
 def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
-    """Grow the decomposition tree, splitting where BIC improves.
+    """Grow the decomposition tree, splitting where the model's BIC improves.
+
+    A candidate split is accepted only when replacing the split node by its two
+    children lowers the information criterion of the *whole* model, the other
+    leaves being held fixed (see `_model_bic`).
 
     Growth stops at ``max_depth``, when a level produces no accepted split, or
     when the total number of regions reaches ``_MAX_NODES`` (a hard cost cap
@@ -461,12 +492,14 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
     for _ in range(max_depth):
         new_leaves = []
         changed = False
-        for leaf in leaves:
+        for idx, leaf in enumerate(leaves):
             if (leaf.model is None or leaf.bbox is None
                     or len(new_leaves) + 1 >= _MAX_NODES):
                 new_leaves.append(leaf)
                 continue
-            parent_bic = _bic(_region_sse(a, leaf, dt), n, _region_k(leaf, theta))
+            # the rest of the model: leaves already kept plus those still to come
+            others = new_leaves + leaves[idx + 1:]
+            keep_bic = _model_bic(a, others + [leaf], n, dt, theta)
             best = None
             for v in _candidate_vectors(leaf, u1, u2, oblique):
                 pair = _try_split(a, leaf, v, sid, u1, u2, dt, rcond, eta, mu)
@@ -474,12 +507,11 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
                 if pair is None:
                     continue
                 child_a, child_b = pair
-                child_bic = _bic(
-                    _region_sse(a, child_a, dt) + _region_sse(a, child_b, dt),
-                    n, _region_k(child_a, theta) + _region_k(child_b, theta))
-                if best is None or child_bic < best[0]:
-                    best = (child_bic, child_a, child_b)
-            if best is not None and best[0] < parent_bic:
+                split_bic = _model_bic(a, others + [child_a, child_b], n, dt,
+                                       theta)
+                if best is None or split_bic < best[0]:
+                    best = (split_bic, child_a, child_b)
+            if best is not None and best[0] < keep_bic:
                 new_leaves.extend([best[1], best[2]])
                 changed = True
             else:
@@ -491,15 +523,19 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
 
 
 def _prune(a, leaves, dt, theta, rcond, eta):
-    """Backward elimination: collapse a sibling pair into its parent while the
-    parent's BIC contribution is no worse."""
+    """Backward elimination: collapse a sibling pair into its parent while doing
+    so does not raise the whole model's BIC.
+
+    In [1]_ this pass does the model selection, because there the forward pass
+    deliberately over-grows a fully specified tree.  `_forward_pass` here instead
+    accepts a split only when it already improves the whole model's BIC, and no
+    such split can later be collapsed: the BIC gap that justified it only widens
+    as the remaining error falls, so this pass is a safety net that does not
+    trigger after a completed forward pass.  It is retained because it *is*
+    reachable for an externally supplied set of leaves, and it keeps the
+    ``prune`` argument meaningful for callers who assemble a tree by hand.
+    """
     n = a.size
-
-    def contribution(nodes):
-        sse = sum(_region_sse(a, nd, dt) for nd in nodes)
-        k = sum(_region_k(nd, theta) for nd in nodes)
-        return _bic(sse, n, k)
-
     changed = True
     while changed and len(leaves) > 1:
         changed = False
@@ -518,9 +554,10 @@ def _prune(a, leaves, dt, theta, rcond, eta):
             _fit_node(a, parent, dt, rcond, eta)
             if parent.model is None:
                 continue
-            if contribution([parent]) <= contribution(sibs):
-                leaves = [ln for ln in leaves if ln not in sibs]
-                leaves.append(parent)
+            others = [ln for ln in leaves if ln not in sibs]
+            if (_model_bic(a, others + [parent], n, dt, theta)
+                    <= _model_bic(a, others + sibs, n, dt, theta)):
+                leaves = others + [parent]
                 changed = True
                 break
     return leaves
@@ -617,7 +654,9 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
         considered, which is faster.
     prune : bool, optional
         Whether to run the backward-elimination pruning pass after growing the
-        tree.  Default True.
+        tree.  Default True.  Because a split is only grown when it improves the
+        whole model's criterion, this pass acts as a safety net and in practice
+        leaves the grown tree unchanged; see Notes.
     forecast : int, optional
         Number of additional columns to extrapolate beyond the input.  Default
         0.  ``M * (T + forecast)`` must not exceed 5e7.
@@ -694,6 +733,14 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
       region reduces to a plain truncated-SVD DMD fit.
     - Mode amplitudes are fitted by least squares over all snapshots rather
       than from a single initial condition.
+    - A region's operator is fitted to its snapshot block directly, rather than
+      to the block pre-multiplied by the region's membership; the membership
+      weights the model selection and the final blend instead.
+    - Growth is greedy: a split is kept only if it already improves the whole
+      model's criterion, whereas [1]_ over-grows a fully specified tree and
+      selects with the backward pass.  Both optimize the same criterion, but the
+      search here explores fewer partitions and, as a consequence, the backward
+      pass cannot collapse anything the forward pass produced.
 
     The reconstruction and forecast use the fitted eigenvalues as returned in
     ``regions[i].eigenvalues`` (no clipping); a region's in-window
@@ -702,10 +749,17 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     expected.  Forecasting is intended for axis-aligned regions; an oblique
     region is not extrapolated along its diagonal beyond the input window, so a
     multi-region forecast that would rely on an oblique region past the data is
-    bounded and finite but not accuracy-guaranteed.  The reported ``bic`` drops
-    an additive constant and split/prune
-    decisions use a membership-weighted local error that equals the true global
-    SSE only in the crisp (``smoothness -> 0``) limit.
+    bounded and finite but not accuracy-guaranteed.
+
+    A split is accepted, and a sibling pair collapsed, only when doing so
+    improves the information criterion of the *complete* model rather than that
+    of the region being split, as in [1]_; the summed membership-weighted region
+    errors are used as an additive proxy for the global error, which they equal
+    in the crisp (``smoothness -> 0``) limit.  The memberships weight the
+    squared errors linearly, so that a split lowers the criterion only by
+    fitting the data better.  The reported ``bic`` is computed from the true
+    global reconstruction error and drops an additive constant, so it is
+    internally consistent but not comparable to a BIC from another tool.
 
     References
     ----------
