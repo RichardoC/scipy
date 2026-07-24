@@ -2,8 +2,9 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from scipy.linalg import fsrd, FSRDResult, FSRDRegion
+from scipy.linalg import fsrd
 from scipy.linalg._fsrd import (
+    FSRDResult, FSRDRegion,
     _Node, _try_split, _prune, _fit_node, _bic, _region_k, _sigmoid,
     _topological_transform, _row_spans,
 )

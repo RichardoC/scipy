@@ -1,5 +1,5 @@
 Fuzzy Spectral Region Decomposition (:func:`scipy.linalg.fsrd`)
-==============================================================
+===============================================================
 
 .. currentmodule:: scipy.linalg
 
@@ -93,7 +93,7 @@ a few percent by devoting separate operators to the two regimes.
 Inspecting the local operators
 ------------------------------
 
-Each entry of ``res.regions`` is a :class:`FSRDRegion` describing one local
+Each entry of ``res.regions`` is an ``FSRDRegion`` describing one local
 operator: its continuous-time ``eigenvalues``, DMD ``modes``, ``amplitudes``,
 the ``bounding_box`` of the region within the snapshot matrix, its tree
 ``level`` and fitted ``rank``:

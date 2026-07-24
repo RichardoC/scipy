@@ -17,7 +17,11 @@ from dataclasses import dataclass
 
 from scipy._lib._array_api import xp_capabilities
 
-__all__ = ['fsrd', 'FSRDResult', 'FSRDRegion']
+# ``FSRDResult``/``FSRDRegion`` are return types, not directly-constructed API;
+# following the scipy convention for result objects they are kept out of
+# ``__all__`` (and the subpackage namespace) and documented via ``fsrd``'s
+# ``Returns`` section instead.
+__all__ = ['fsrd']
 
 # Numerical guards and hard limits (the limits bound worst-case cost so that a
 # single call with adversarial hyper-parameters cannot exhaust memory or time).
@@ -603,7 +607,10 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
         where its fuzzy membership exceeds ``eta``.  Default ``1e-4``.
     smoothness : float, optional
         Positive smoothness factor :math:`\mu` controlling the sigmoid boundary
-        width (smaller is crisper).  Default ``0.05``.
+        width (smaller is crisper).  Default ``0.05``.  At a sharp regime
+        boundary a smaller value reconstructs the transition more accurately --
+        approaching exact recovery in the crisp ``\mu -> 0`` limit -- while a
+        larger value blends neighbouring regions more smoothly.
     oblique : bool, optional
         If True (default) both axis-aligned and oblique split orientations are
         tried at each node; if False only axis-aligned (row/column) splits are
@@ -623,9 +630,26 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     Returns
     -------
     res : FSRDResult
-        An object with attributes ``reconstruction`` (the ``(M, T + forecast)``
-        fuzzy-weighted reconstruction), ``regions`` (a list of `FSRDRegion`
-        local operators), ``n_regions`` and ``bic``.
+        The decomposition.  It is a returned object (not meant to be
+        constructed directly) with the attributes:
+
+        - ``reconstruction`` : ndarray -- the ``(M, T + forecast)``
+          fuzzy-weighted sum of the local reconstructions; real if `a` is real.
+        - ``regions`` : list -- the local operators, one per leaf of the
+          decomposition tree.  Each element is an ``FSRDRegion`` with attributes
+          ``eigenvalues`` (continuous-time
+          :math:`\omega = \ln(\lambda)/\Delta t`, real part growth/decay rate
+          and imaginary part angular frequency), ``modes`` (the DMD modes
+          :math:`\Phi`, one per column), ``amplitudes`` (the mode amplitudes
+          :math:`b`), ``bounding_box`` (``(row_start, row_stop, col_start,
+          col_stop)`` within the input), ``level`` (depth in the tree, ``0`` at
+          the root), ``split_vector`` (the sigmoid coefficients ``[v0, v1, v2]``
+          of the split that created the region, ``None`` at the root) and
+          ``rank`` (the fitted local rank).
+        - ``n_regions`` : int -- the number of local operators (leaves).
+        - ``bic`` : float -- the Bayesian information criterion of the final
+          model (lower is better); an additive constant is dropped, so the value
+          is internally consistent but not comparable to a BIC from another tool.
 
     Raises
     ------
@@ -664,7 +688,10 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
       the boundary offset from the fixed fractions ``(0.35, 0.5, 0.65)`` of the
       region, rather than refined by particle-swarm optimization.
     - The ridge parameter is chosen by generalized cross-validation rather than
-      the paper's BIC fixed-point iteration.
+      the paper's BIC fixed-point iteration.  It governs the SVD row-pruning
+      selection only and does not shrink the returned local operator, so on
+      well-conditioned data -- where the selected ridge tends to zero -- each
+      region reduces to a plain truncated-SVD DMD fit.
     - Mode amplitudes are fitted by least squares over all snapshots rather
       than from a single initial condition.
 
@@ -672,7 +699,11 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     ``regions[i].eigenvalues`` (no clipping); a region's in-window
     reconstruction is bounded because its amplitudes are a least-squares fit to
     bounded data, while forecasting a mode with ``|lambda| > 1`` grows as
-    expected.  The reported ``bic`` drops an additive constant and split/prune
+    expected.  Forecasting is intended for axis-aligned regions; an oblique
+    region is not extrapolated along its diagonal beyond the input window, so a
+    multi-region forecast that would rely on an oblique region past the data is
+    bounded and finite but not accuracy-guaranteed.  The reported ``bic`` drops
+    an additive constant and split/prune
     decisions use a membership-weighted local error that equals the true global
     SSE only in the crisp (``smoothness -> 0``) limit.
 

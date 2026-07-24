@@ -117,8 +117,6 @@ Dynamic mode / Koopman decomposition
    :toctree: generated/
 
    fsrd - Fuzzy Spectral Region Decomposition (multi-operator DMD/Koopman)
-   FSRDResult - Result object returned by fsrd
-   FSRDRegion - A single local operator produced by fsrd
 
 
 Matrix Functions
