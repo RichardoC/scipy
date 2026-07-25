@@ -12,6 +12,8 @@ region, and selects how many regions to keep by the Bayesian information
 criterion of the whole model.  Local reconstructions are recombined with
 sigmoidal membership weights that form a partition of unity.
 """
+import warnings
+
 import numpy as np
 from dataclasses import dataclass
 
@@ -611,6 +613,16 @@ def _reconstruct(leaves, u1, u2_out, dt, out_cols, orig_cols, shape_rows, real):
                                                    m1 - m0, qn)
         accum[m0:m1, t0:col_end] += phi * dense
         weight[m0:m1, t0:col_end] += phi
+    unsupported = out_cols > orig_cols and bool(
+        np.any(weight[:, orig_cols:] <= _EPS))
+    if unsupported:
+        # Only regions that can be extended past the data contribute to the
+        # forecast; where none does, the cells stay at zero, which must not be
+        # mistaken for a prediction.
+        warnings.warn("no region could be extrapolated over part of the "
+                      "requested forecast horizon; those entries of the "
+                      "reconstruction are zero rather than predicted",
+                      RuntimeWarning, stacklevel=3)
     weight = np.where(weight > _EPS, weight, 1.0)
     accum = accum / weight
     return accum.real if real else accum
@@ -723,6 +735,13 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
         `forecast` is outside its valid range, or if the requested output size
         exceeds the internal limit.
 
+    Warns
+    -----
+    RuntimeWarning
+        If part of a requested forecast horizon is covered only by regions that
+        cannot be extrapolated, in which case those entries of `reconstruction`
+        are zero rather than predicted.
+
     See Also
     --------
     scipy.linalg.svd : Singular value decomposition used by each local fit.
@@ -766,6 +785,9 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
       weights the model selection and the final blend instead.
     - The explicit error model that [1]_ applies to whiten the data before
       fitting is not implemented, so noisy data is fitted as given.
+    - The sigmoid steepness is set from the norm of a split's orientation
+      components alone; [1]_ writes the norm of the whole coefficient vector,
+      which also includes the boundary offset.
     - A region is only split along an axis if it spans at least 4 rows or 8
       columns, which [1]_ does not require; very small regions are therefore
       left intact.

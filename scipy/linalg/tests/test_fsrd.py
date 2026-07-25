@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -71,15 +73,45 @@ class TestFSRD:
 
         ref = fsrd(xp.asarray(x), oblique=oblique).reconstruction
         for forecast in (1, 7):
-            res = fsrd(xp.asarray(x), oblique=oblique, forecast=forecast)
+            with warnings.catch_warnings():
+                # an oblique region cannot be extrapolated, which this data
+                # provokes; that is reported separately and is not what this
+                # test is about
+                warnings.simplefilter('ignore', RuntimeWarning)
+                res = fsrd(xp.asarray(x), oblique=oblique, forecast=forecast)
             assert res.reconstruction.shape == (rows, cols + forecast)
             xp_assert_close(res.reconstruction[:, :cols], ref, atol=1e-10)
+
+    def test_unsupported_forecast_warns(self, xp):
+        # Oblique regions are not extrapolated, so a forecast horizon they alone
+        # cover cannot be predicted.  Those entries stay zero, which must be
+        # announced rather than passed off as a prediction.
+        rows, cols = 30, 60
+        g1, g2 = np.meshgrid(np.linspace(0, 1, rows), np.linspace(0, 1, cols),
+                             indexing='ij')
+        x = np.sin(8 * g2) + 0.1 * g1
+        corner = g1 + g2 > 1
+        x[corner] = 3 * np.cos(12 * g2[corner])
+        with pytest.warns(RuntimeWarning, match='forecast horizon'):
+            fsrd(xp.asarray(x), forecast=10)
+
+        # a region that can be extended must forecast silently
+        t = np.linspace(0, 6, 80)
+        y = np.stack([np.sin(2 * t), np.cos(2 * t)])
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', RuntimeWarning)
+            res = fsrd(xp.asarray(y), dt=float(t[1] - t[0]), max_depth=0,
+                       forecast=20)
+        assert res.reconstruction.shape == (2, 100)
 
     @pytest.mark.parametrize('shape', [(4, 10), (2, 2)])
     def test_degenerate_all_zero_input(self, xp, shape):
         # Nothing can be fitted, so no region is returned -- but the call must
         # still succeed and give a finite, correctly shaped reconstruction.
-        res = fsrd(xp.zeros(shape), forecast=3)
+        # no region exists, so the whole forecast horizon is unsupported and
+        # says so
+        with pytest.warns(RuntimeWarning, match='forecast horizon'):
+            res = fsrd(xp.zeros(shape), forecast=3)
         assert res.n_regions == 0
         assert res.reconstruction.shape == (shape[0], shape[1] + 3)
         assert bool(np.all(np.isfinite(np.asarray(res.reconstruction))))
