@@ -56,6 +56,25 @@ class TestFSRD:
                   for d in (0, 2, 4)]
         assert counts == [1, 1, 1]
 
+    @pytest.mark.parametrize('oblique', [False, True])
+    def test_forecast_leaves_in_window_untouched(self, xp, oblique):
+        # Asking for a forecast must not change the in-window reconstruction, on
+        # any split geometry.  An oblique region has to be mapped back onto its
+        # own span, so it is not extrapolated along its diagonal; that must not
+        # leak the extrapolated columns back inside the window.
+        rows, cols = 30, 60
+        g1, g2 = np.meshgrid(np.linspace(0, 1, rows), np.linspace(0, 1, cols),
+                             indexing='ij')
+        x = np.sin(8 * g2) + 0.1 * g1
+        corner = g1 + g2 > 1
+        x[corner] = 3 * np.cos(12 * g2[corner])
+
+        ref = fsrd(xp.asarray(x), oblique=oblique).reconstruction
+        for forecast in (1, 7):
+            res = fsrd(xp.asarray(x), oblique=oblique, forecast=forecast)
+            assert res.reconstruction.shape == (rows, cols + forecast)
+            xp_assert_close(res.reconstruction[:, :cols], ref, atol=1e-10)
+
     @pytest.mark.parametrize('shape', [(4, 10), (2, 2)])
     def test_degenerate_all_zero_input(self, xp, shape):
         # Nothing can be fitted, so no region is returned -- but the call must

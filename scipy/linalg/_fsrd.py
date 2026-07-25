@@ -590,7 +590,13 @@ def _reconstruct(leaves, u1, u2_out, dt, out_cols, orig_cols, shape_rows, real):
         if leaf.model is None:
             continue
         m0, m1, t0, t1 = leaf.bbox
-        col_end = out_cols if t1 >= orig_cols else t1
+        if leaf.oblique:
+            # An oblique region is not extrapolated along its diagonal: its
+            # model is only evaluated over its own in-window span, since the
+            # inverse transform has to map the result back onto that span.
+            col_end = min(t1, orig_cols)
+        else:
+            col_end = out_cols if t1 >= orig_cols else t1
         qn = col_end - t0
         # membership only over the region's bounding box (rows m0:m1, cols t0:)
         u1r = u1[m0:m1]
@@ -601,8 +607,8 @@ def _reconstruct(leaves, u1, u2_out, dt, out_cols, orig_cols, shape_rows, real):
             phi = phi * (om if side == 0 else (1.0 - om))
         dense = _dmd_reconstruct(leaf.model, qn, dt)
         if leaf.oblique:
-            spans = [(a0, min(b0, qn - 1)) for a0, b0 in leaf.spans]
-            dense = _inverse_topological_transform(dense, spans, m1 - m0, qn)
+            dense = _inverse_topological_transform(dense, leaf.spans,
+                                                   m1 - m0, qn)
         accum[m0:m1, t0:col_end] += phi * dense
         weight[m0:m1, t0:col_end] += phi
     weight = np.where(weight > _EPS, weight, 1.0)
@@ -758,6 +764,11 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     - A region's operator is fitted to its snapshot block directly, rather than
       to the block pre-multiplied by the region's membership; the membership
       weights the model selection and the final blend instead.
+    - The explicit error model that [1]_ applies to whiten the data before
+      fitting is not implemented, so noisy data is fitted as given.
+    - A region is only split along an axis if it spans at least 4 rows or 8
+      columns, which [1]_ does not require; very small regions are therefore
+      left intact.
 
     Model order is selected as in [1]_, in two passes over the whole model's
     criterion.  The forward pass splits every splittable region of a level
