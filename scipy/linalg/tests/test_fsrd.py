@@ -416,10 +416,11 @@ class TestFSRDInternals:
         assert_allclose(y[2], np.interp(xq_, xp_, seg))
 
     def test_default_hyperparameters_match_sm_table_s1(self):
-        # SM Table S1: mu=0.05, eta=1e-4, r=1e-4, Theta=1.5 (default).
+        # SM Table S1: mu=0.05, eta=1e-4, r=1e-4, and Theta in 1.5 to 3 -- of
+        # which 3 is the value the reference reports using.
         import inspect
         d = {k: v.default for k, v in inspect.signature(fsrd).parameters.items()}
         assert d['smoothness'] == 0.05
         assert d['eta'] == 1e-4
         assert d['rcond'] == 1e-4
-        assert d['theta'] == 1.5
+        assert d['theta'] == 3.0

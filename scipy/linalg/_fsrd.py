@@ -149,32 +149,22 @@ def _steepness(v, dc, mu, scale):
     return 20.0 / denom
 
 
-def _optimal_amplitudes(phi, lam, block):
-    """Least-squares DMD mode amplitudes fitted over *all* snapshots.
+def _initial_amplitudes(w, lam, s_r, vh_r):
+    """Mode amplitudes from the first snapshot: ``b = (W Lambda)^-1 x0_tilde``.
 
-    Solves ``min_b || block - Phi diag(b) V ||_F`` with ``V[i, k] = lam_i^k``.
-    This is the standard "optimal amplitude" fit, used here as a more robust
-    alternative to the paper's single-initial-condition fit ``b = Phi^+ x0``.
-
-    The Vandermonde is evaluated in log space and normalised so each mode's
-    row has unit maximum magnitude over the window, which makes the normal
-    equations well conditioned and overflow-free even for growing eigenvalues;
-    the normalisation is undone exactly afterwards, so the returned amplitudes
-    are those of the *unmodified* problem.
+    ``x0_tilde`` is the first column of :math:`\\tilde{\\Sigma}\\tilde{V}^{H}`,
+    i.e. the initial state expressed in the reduced basis, so the amplitudes are
+    those that reproduce the first snapshot exactly.
     """
-    n = block.shape[1]
-    k = np.arange(n)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        loglam = np.log(np.where(lam == 0, np.finfo(float).tiny, lam))
-    scale = np.maximum(loglam.real, 0.0) * (n - 1)          # >= 0, per mode
-    vand = np.exp(loglam[:, None] * k[None, :] - scale[:, None])   # |.| <= 1
-    p = (phi.conj().T @ phi) * np.conj(vand @ vand.conj().T)
-    q = np.conj(np.diag(vand @ block.conj().T @ phi))
+    x0 = s_r * vh_r[:, 0]
+    wl = w * lam[None, :]                     # W Lambda
     try:
-        b_scaled = np.linalg.solve(p, q)
+        return np.linalg.solve(wl, x0)
     except np.linalg.LinAlgError:
-        b_scaled = np.linalg.lstsq(p, q, rcond=None)[0]
-    return b_scaled * np.exp(-scale)
+        try:
+            return np.linalg.lstsq(wl, x0, rcond=None)[0]
+        except np.linalg.LinAlgError:
+            return None
 
 
 def _regularized_svd(x1, rcond):
@@ -259,7 +249,9 @@ def _dmd_operator(block, dt, rcond):
     phi = x2 @ v_r @ w                        # exact DMD modes
     safe = np.where(lam == 0, np.finfo(float).tiny, lam)
     omega = np.log(safe) / dt
-    b = _optimal_amplitudes(phi, lam, block)
+    b = _initial_amplitudes(w, lam, s_r, vh_r)
+    if b is None:
+        return None
     return omega, phi, b
 
 
@@ -268,7 +260,7 @@ def _dmd_reconstruct(model, n, dt):
 
     Computes each mode's contribution ``b_i lambda_i^k`` directly in log space
     with an overflow-only guard.  In-region reconstruction is therefore exact
-    (bounded, since the least-squares amplitudes fit bounded data); forecasting
+    (the amplitudes reproduce the first snapshot exactly); forecasting
     a growing mode grows correctly, saturating only at the float64 ceiling.
     """
     omega, phi, b = model
@@ -416,6 +408,37 @@ def _region_sse(a, node, dt):
     return float(np.sum(node.phi * np.abs(recon - a) ** 2))
 
 
+def _region_nrmse(a, node, dt):
+    """Normalised RMSE of a region's local model, over the region's own extent.
+
+    The residual is normalised by the region's own spread about its mean, so
+    regions of different magnitude contribute comparably.
+    """
+    m0, m1, t0, t1 = node.bbox
+    block = a[m0:m1, t0:t1]
+    recon = _node_local_recon(node, dt, a.shape)[m0:m1, t0:t1]
+    scale = np.linalg.norm(block - block.mean())
+    err = np.linalg.norm(recon - block)
+    return float(err / scale) if scale > _EPS else float(err)
+
+
+def _model_wnrmse(a, nodes, dt):
+    """Weighted net error of a whole candidate model, following [1]_.
+
+    Each region's normalised error is weighted by the share of the grid its
+    membership accounts for; the weights of the current leaves sum to one.  This
+    is the cost the split search minimises -- as distinct from the information
+    criterion, which decides how many regions to keep.
+    """
+    total = 0.0
+    denom = float(a.size)
+    for nd in nodes:
+        if nd.model is None or nd.bbox is None:
+            continue
+        total += float(nd.phi.sum()) / denom * _region_nrmse(a, nd, dt)
+    return total
+
+
 def _leaf_sse(a, node, dt):
     """`_region_sse` for a node, cached (the model and data never change)."""
     if node.sse is None:
@@ -540,10 +563,11 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
                 if pair is None:
                     continue
                 child_a, child_b = pair
-                split_bic = _model_bic(a, others + [child_a, child_b], n, dt,
-                                       theta)
-                if best is None or split_bic < best[0]:
-                    best = (split_bic, child_a, child_b)
+                # the boundary is positioned by the weighted net error of the
+                # resulting model, not by the information criterion
+                cost = _model_wnrmse(a, others + [child_a, child_b], dt)
+                if best is None or cost < best[0]:
+                    best = (cost, child_a, child_b)
             if best is None:
                 new_leaves.append(leaf)
             else:
@@ -656,7 +680,7 @@ def _reconstruct(leaves, u1, u2_out, dt, out_cols, orig_cols, shape_rows, real):
 # Public API
 # ---------------------------------------------------------------------------
 @xp_capabilities(np_only=True)
-def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
+def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
          smoothness=0.05, oblique=True, prune=True, forecast=0,
          check_finite=True):
     r"""
@@ -693,7 +717,8 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     theta : float, optional
         BIC complexity-scaling parameter :math:`\Theta \ge 1`; the
         model-complexity penalty of a region grows as :math:`\Theta^{L-1}` with
-        its tree level ``L``.  Larger values favour fewer regions.  Default 1.5.
+        its tree level ``L``.  Larger values favour fewer regions.  Default 3,
+        the value [1]_ used for its own reported results.
     rcond : float, optional
         Positive relative singular-value cutoff for the local SVD truncation
         (values below ``rcond`` times the largest singular value are dropped).
@@ -793,19 +818,14 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
 
     - Split orientation is chosen from the paper's four candidate vectors and
       the boundary offset from the fixed fractions ``(0.35, 0.5, 0.65)`` of the
-      region, rather than refined by particle-swarm optimization, and candidates
-      are ranked by the model's information criterion rather than by the paper's
-      weighted-NRMSE net error.  This tends to find better-fitting partitions,
-      and so can retain more regions than the paper reports for a given system.
+      region, rather than refined by particle-swarm optimization.  Candidates are
+      ranked by the paper's weighted net error, as there, so only the search over
+      positions is coarser.
     - The ridge parameter is chosen by generalized cross-validation rather than
       the paper's BIC fixed-point iteration.  It shrinks the local operator as in
       [1]_, but this selection rule effectively never chooses a nonzero ridge
       once the small singular values have been truncated, so in practice each
       region reduces to a plain truncated-SVD DMD fit.
-    - Mode amplitudes are fitted by least squares over all snapshots rather than
-      from the first snapshot alone.  This fits a given set of regions more
-      accurately than [1]_ does, which in turn weakens the case for splitting,
-      so fewer regions may be selected than the paper reports.
     - The explicit error model that [1]_ applies to whiten the data before
       fitting is not implemented, so noisy data is fitted as given.
     - The input is used as supplied, with the singular-value cutoff applied
@@ -815,10 +835,6 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
     - A region is only split along an axis if it spans at least 4 rows or 8
       columns, which [1]_ does not require; very small regions are therefore
       left intact.
-
-    The default ``theta=1.5`` is the lower end of the range given in [1]_, which
-    used ``theta=3`` for its own reported results; the larger value favours
-    fewer regions.
 
     Model order is selected as in [1]_, in two passes over the whole model's
     criterion.  The forward pass splits every splittable region of a level
@@ -834,8 +850,8 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
 
     The reconstruction and forecast use the fitted eigenvalues as returned in
     ``regions[i].eigenvalues`` (no clipping); a region's in-window
-    reconstruction is bounded because its amplitudes are a least-squares fit to
-    bounded data, while forecasting a mode with ``|lambda| > 1`` grows as
+    reconstruction is bounded because its amplitudes are fixed by the region's
+    first snapshot, while forecasting a mode with ``|lambda| > 1`` grows as
     expected.  Forecasting is intended for axis-aligned regions; an oblique
     region is not extrapolated along its diagonal beyond the input window, so a
     multi-region forecast that would rely on an oblique region past the data is
