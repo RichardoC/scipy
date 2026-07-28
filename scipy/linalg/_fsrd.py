@@ -12,6 +12,7 @@ region, and selects how many regions to keep by the Bayesian information
 criterion of the whole model.  Local reconstructions are recombined with
 sigmoidal membership weights that form a partition of unity.
 """
+import operator
 import warnings
 
 import numpy as np
@@ -31,6 +32,7 @@ _EPS = 1e-12
 _MAX_DEPTH = 24              # hard ceiling on the tree depth argument
 _MAX_NODES = 4096            # ceiling on the total number of regions grown
 _MAX_ELEMENTS = 50_000_000   # ceiling on ``M * (T + forecast)`` output cells
+                             # (peak memory is several times this; see `fsrd`)
 _LOG_CLIP = 700.0            # exp(700) < float64 max; overflow-only guard
 
 
@@ -105,7 +107,7 @@ def _sigmoid(u1, u2, v, tau):
     ``Omega(u) = 1 / (1 + exp(-tau (v0 + v1 u1 + v2 u2)))``.
     """
     z = v[0] + v[1] * u1[:, None] + v[2] * u2[None, :]
-    with np.errstate(over='ignore'):
+    with np.errstate(over='ignore', under='ignore'):
         return 1.0 / (1.0 + np.exp(-tau * z))
 
 
@@ -522,10 +524,13 @@ def _try_split(a, node, v, sid, u1, u2, dt, rcond, eta, mu):
     c2 = _centroid((node.phi - hard), u1, u2)
     tau = _steepness(v, c2 - c1, mu, _median_scale(node.phi, u1, u2))
     omega = _sigmoid(u1, u2, v, tau)
-    left = _Node(node.phi * omega, node.level + 1,
-                 node.path + [(v, tau, 0, sid)])
-    right = _Node(node.phi * (1.0 - omega), node.level + 1,
-                  node.path + [(v, tau, 1, sid)])
+    # a saturated membership times a saturated activation underflows to zero,
+    # which is the intended value
+    with np.errstate(under='ignore'):
+        left = _Node(node.phi * omega, node.level + 1,
+                     node.path + [(v, tau, 0, sid)])
+        right = _Node(node.phi * (1.0 - omega), node.level + 1,
+                      node.path + [(v, tau, 1, sid)])
     _fit_node(a, left, dt, rcond, eta)
     _fit_node(a, right, dt, rcond, eta)
     if left.model is None or right.model is None:
@@ -561,8 +566,9 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
         new_leaves = []
         changed = False
         for idx, leaf in enumerate(leaves):
+            pending = len(leaves) - idx - 1
             if (leaf.model is None or leaf.bbox is None
-                    or len(new_leaves) + 2 > _MAX_NODES):
+                    or len(new_leaves) + 2 + pending > _MAX_NODES):
                 new_leaves.append(leaf)
                 continue
             # the rest of the model: leaves already kept plus those still to come
@@ -663,9 +669,10 @@ def _reconstruct(leaves, u1, u2_out, dt, out_cols, orig_cols, shape_rows, real):
         u1r = u1[m0:m1]
         u2r = u2_out[t0:col_end]
         phi = np.ones((m1 - m0, qn))
-        for v, tau, side, _sid in leaf.path:
-            om = _sigmoid(u1r, u2r, v, tau)
-            phi = phi * (om if side == 0 else (1.0 - om))
+        with np.errstate(under='ignore'):
+            for v, tau, side, _sid in leaf.path:
+                om = _sigmoid(u1r, u2r, v, tau)
+                phi = phi * (om if side == 0 else (1.0 - om))
         dense = _dmd_reconstruct(leaf.model, qn, dt)
         if leaf.oblique:
             dense = _inverse_topological_transform(dense, leaf.spans,
@@ -690,6 +697,33 @@ def _reconstruct(leaves, u1, u2_out, dt, out_cols, orig_cols, shape_rows, real):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+def _as_float(value, name):
+    """Coerce to a finite float, reporting the parameter by name."""
+    try:
+        out = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"`{name}` must be a real number.") from exc
+    if not np.isfinite(out):
+        raise ValueError(f"`{name}` must be finite.")
+    return out
+
+
+def _as_index(value, name):
+    """Coerce to an exact integer, reporting the parameter by name.
+
+    Truncating silently would let ``max_depth=2.9`` mean 2.
+    """
+    try:
+        return operator.index(value)
+    except TypeError:
+        pass
+    out = _as_float(value, name)
+    if out != int(out):
+        raise ValueError(f"`{name}` must be an integer.")
+    return int(out)
+
+
+
 @xp_capabilities(np_only=True)
 def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
          smoothness=0.05, oblique=True, prune=True, forecast=0,
@@ -756,7 +790,10 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
         supports; that setting is intended for diagnostics.  See Notes.
     forecast : int, optional
         Number of additional columns to extrapolate beyond the input.  Default
-        0.  ``M * (T + forecast)`` must not exceed 5e7.
+        0.  ``M * (T + forecast)`` must not exceed 5e7.  Note that this bounds
+        the number of output cells, not bytes: the blend holds a complex
+        accumulator and a real weight per cell and builds one grid per region, so
+        peak memory runs to roughly eight times the size of the output array.
     check_finite : bool, optional
         Whether to check that the input contains only finite numbers.  Default
         True.  Disabling may improve performance, but passing non-finite data
@@ -927,20 +964,28 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
         raise ValueError("`a` must not be empty.")
     if a.shape[1] < 2:
         raise ValueError("`a` must have at least two columns (T >= 2).")
+    if a.dtype.kind not in 'biufc':
+        raise ValueError("`a` must have a numeric dtype.")
     if check_finite and not np.isfinite(a).all():
         raise ValueError("array must not contain infs or NaNs")
 
-    max_depth = int(max_depth)
-    forecast = int(forecast)
+    max_depth = _as_index(max_depth, 'max_depth')
+    forecast = _as_index(forecast, 'forecast')
     if not 0 <= max_depth <= _MAX_DEPTH:
         raise ValueError(f"`max_depth` must be in [0, {_MAX_DEPTH}].")
     if forecast < 0:
         raise ValueError("`forecast` must be non-negative.")
-    dt = float(dt)
+    # each of these must be finite as well as in range: a one-sided comparison
+    # would let infinity through, and infinity propagates into every fit
+    dt = _as_float(dt, 'dt')
+    rcond = _as_float(rcond, 'rcond')
+    eta = _as_float(eta, 'eta')
+    smoothness = _as_float(smoothness, 'smoothness')
+    theta = _as_float(theta, 'theta')
     if not dt > 0:
         raise ValueError("`dt` must be positive.")
-    if not rcond > 0:
-        raise ValueError("`rcond` must be positive.")
+    if not 0 < rcond < 1:
+        raise ValueError("`rcond` must lie in (0, 1).")
     if not 0 < eta < 1:
         raise ValueError("`eta` must lie in (0, 1).")
     if not smoothness > 0:
@@ -960,23 +1005,49 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
     u1 = np.linspace(0.0, 1.0, m) if m > 1 else np.zeros(1)
     u2 = np.linspace(0.0, 1.0, t) if t > 1 else np.zeros(1)
 
-    leaves = _forward_pass(work, u1, u2, dt, rcond, eta, smoothness, theta,
-                           max_depth, oblique)
-    if prune and len(leaves) > 1:
-        leaves = _prune(work, leaves, dt, theta, rcond, eta)
-
     out_cols = t + forecast
     if forecast and t > 1:
         u2_out = np.arange(out_cols) * (1.0 / (t - 1))
     else:
         u2_out = np.linspace(0.0, 1.0, out_cols) if out_cols > 1 else np.zeros(1)
 
-    recon = _reconstruct(leaves, u1, u2_out, dt, out_cols, t, m, real)
+    # Fuzzy memberships saturate and their products underflow, and data of
+    # extreme magnitude overflows intermediate sums.  Neither is actionable by
+    # the caller, and reporting them would bury the one thing that is -- a
+    # reconstruction that did not come out finite, which is checked below.  So
+    # the floating-point environment is quietened over the numerics only, and
+    # never over the caller's own code.
+    with np.errstate(all='ignore'):
+        leaves = _forward_pass(work, u1, u2, dt, rcond, eta, smoothness, theta,
+                               max_depth, oblique)
+        if prune and len(leaves) > 1:
+            leaves = _prune(work, leaves, dt, theta, rcond, eta)
+        recon = _reconstruct(leaves, u1, u2_out, dt, out_cols, t, m, real)
 
-    n = work.size
-    sse = float(np.sum(np.abs(recon[:, :t] - work) ** 2))
-    total_k = sum(_region_k(ln, theta) for ln in leaves if ln.model is not None)
-    bic = _bic(sse, n, total_k)
+    if not np.isfinite(recon).all():
+        warnings.warn("the reconstruction is not finite everywhere; the fitted "
+                      "dynamics may be too large to represent, or the input too "
+                      "poorly scaled", RuntimeWarning, stacklevel=2)
+
+    fitted = [ln for ln in leaves if ln.model is not None]
+    if not fitted:
+        # Nothing could be fitted, so the reconstruction is identically zero.
+        # That is not a model of the data, and reporting a criterion for it would
+        # be worse than useless: with no parameters to penalise it scores better
+        # than any genuine fit.
+        if work.any():
+            warnings.warn("no local operator could be fitted, so the "
+                          "reconstruction is zero everywhere and no region is "
+                          "reported; the data may be rank deficient, or `rcond` "
+                          "too large", RuntimeWarning, stacklevel=2)
+        bic = np.nan
+    else:
+        n = work.size
+        with np.errstate(all='ignore'):
+            sse = float(np.sum(np.abs(recon[:, :t] - work) ** 2))
+            bic = _bic(sse, n, sum(_region_k(ln, theta) for ln in fitted))
+        if not np.isfinite(bic):
+            bic = np.nan
 
     regions = []
     for leaf in sorted(leaves, key=lambda ln: (ln.bbox or (0, 0, 0, 0))[2]):

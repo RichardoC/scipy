@@ -104,6 +104,46 @@ class TestFSRD:
                        forecast=20)
         assert res.reconstruction.shape == (2, 100)
 
+    def test_unfittable_input_is_reported(self, xp):
+        # Non-zero data that admits no operator at all (here the first snapshot
+        # is zero) must not come back as a confident array of zeros, and must
+        # not be handed a criterion: with no parameters to penalise, an empty
+        # model would score better than any real fit.
+        with pytest.warns(RuntimeWarning, match='no local operator'):
+            res = fsrd(xp.asarray(np.array([[0.0, 1.0]])))
+        assert res.n_regions == 0
+        assert np.isnan(res.bic)
+
+    @pytest.mark.parametrize('bad', [
+        dict(dt=np.inf), dict(rcond=np.inf), dict(eta=np.inf),
+        dict(smoothness=np.inf), dict(theta=np.inf),
+        dict(max_depth=np.inf), dict(forecast=np.inf),
+    ])
+    def test_non_finite_parameters_rejected(self, xp, bad):
+        # A one-sided comparison such as ``not dt > 0`` lets infinity through,
+        # and infinity then propagates into every fit.
+        with pytest.raises(ValueError, match='finite'):
+            fsrd(xp.asarray(np.ones((3, 10))), **bad)
+
+    @pytest.mark.parametrize('bad', [dict(max_depth=2.9), dict(forecast=1.5)])
+    def test_non_integral_counts_rejected(self, xp, bad):
+        with pytest.raises(ValueError, match='integer'):
+            fsrd(xp.asarray(np.ones((3, 10))), **bad)
+
+    def test_non_numeric_dtype_rejected(self, xp):
+        with pytest.raises(ValueError, match='numeric dtype'):
+            fsrd(np.array([[1, 2, 3], [4, 5, 6]], dtype=object))
+
+    def test_benign_underflow_does_not_trip_strict_callers(self, xp):
+        # A saturated membership underflows in `exp`, which is expected; a caller
+        # running under np.seterr(all='raise') must not see it.
+        x = np.repeat(_two_regime(), 4, axis=0)
+        old = np.seterr(all='raise')
+        try:
+            fsrd(xp.asarray(x), max_depth=3)
+        finally:
+            np.seterr(**old)
+
     @pytest.mark.parametrize('shape', [(4, 10), (2, 2)])
     def test_degenerate_all_zero_input(self, xp, shape):
         # Nothing can be fitted, so no region is returned -- but the call must
@@ -113,6 +153,7 @@ class TestFSRD:
         with pytest.warns(RuntimeWarning, match='forecast horizon'):
             res = fsrd(xp.zeros(shape), forecast=3)
         assert res.n_regions == 0
+        assert np.isnan(res.bic)
         assert res.reconstruction.shape == (shape[0], shape[1] + 3)
         assert bool(np.all(np.isfinite(np.asarray(res.reconstruction))))
 
