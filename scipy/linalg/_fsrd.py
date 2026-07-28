@@ -119,13 +119,29 @@ def _centroid(phi, u1, u2):
     return np.array([c1, c2])
 
 
-def _steepness(v, dc, mu):
-    """Per-split sigmoid steepness ``tau = 20 / (mu ||v_dir|| ||dc||)``.
+def _median_scale(phi, u1, u2):
+    """Medians of the coordinates a region actually occupies.
 
-    Only the orientation components ``v[1:]`` enter the norm; the offset
-    ``v[0]`` positions the boundary and is excluded deliberately.
+    The split coefficients are expressed relative to these, so that a boundary's
+    orientation means the same thing wherever the region sits on the grid.
     """
-    nv = np.linalg.norm(v[1:])
+    keep = phi > 1e-2
+    rows = np.flatnonzero(keep.any(axis=1))
+    cols = np.flatnonzero(keep.any(axis=0))
+    m1 = np.median(u1[rows]) if rows.size else 1.0
+    m2 = np.median(u2[cols]) if cols.size else 1.0
+    return (m1 if abs(m1) > _EPS else 1.0), (m2 if abs(m2) > _EPS else 1.0)
+
+
+def _steepness(v, dc, mu, scale):
+    """Per-split sigmoid steepness ``tau = 20 / (mu ||v|| ||dc||)``.
+
+    The whole coefficient vector enters the norm, the offset included, with the
+    two orientation components taken relative to the region's coordinate medians
+    (`_median_scale`) -- the normalisation the split search itself works in.
+    """
+    v_norm = np.array([v[0], v[1] * scale[0], v[2] * scale[1]])
+    nv = np.linalg.norm(v_norm)
     ndc = np.linalg.norm(dc)
     denom = mu * nv * ndc
     if denom <= _EPS:
@@ -193,8 +209,11 @@ def _regularized_svd(x1, rcond):
     r0 = max(r0, 0.0)
     nelem = x1.size
     s2 = s ** 2
+    # zero is included so that well-conditioned data, for which no shrinkage is
+    # warranted, is left alone -- the ridge weights the operator itself, so a
+    # floor above zero would damp an exactly recoverable fit.
     best = None
-    for delta in np.logspace(-8, 1, 14) * s2[0]:
+    for delta in np.concatenate(([0.0], np.logspace(-8, 1, 14) * s2[0])):
         g = s2 / (s2 + delta)                 # shrinkage factors
         rss = r0 + np.sum(((1.0 - g) ** 2) * cn)
         df = g.sum()
@@ -214,7 +233,12 @@ def _regularized_svd(x1, rcond):
     if not rows.any():
         rows = np.zeros_like(rows)
         rows[np.argmax(mu)] = True
-    return u[:, rows], s[rows], vh[rows]
+    # 5. return the *ridge-weighted* right factor, so the shrinkage carries into
+    #    the operator rather than only into this row selection.  Here
+    #    ``s_map = diag(s**2 / (s**2 + delta)) Vh``, so the caller's
+    #    ``s_map.conj().T / s`` is ``V diag(s / (s**2 + delta))`` -- the ridge
+    #    pseudo-inverse of Sigma, which tends to ``V Sigma^-1`` as delta -> 0.
+    return u[:, rows], s[rows], s_map[rows]
 
 
 def _dmd_operator(block, dt, rcond):
@@ -462,7 +486,7 @@ def _try_split(a, node, v, sid, u1, u2, dt, rcond, eta, mu):
     hard = (z > 0).astype(float) * node.phi
     c1 = _centroid(hard, u1, u2)
     c2 = _centroid((node.phi - hard), u1, u2)
-    tau = _steepness(v, c2 - c1, mu)
+    tau = _steepness(v, c2 - c1, mu, _median_scale(node.phi, u1, u2))
     omega = _sigmoid(u1, u2, v, tau)
     left = _Node(node.phi * omega, node.level + 1,
                  node.path + [(v, tau, 0, sid)])
@@ -572,7 +596,7 @@ def _prune(a, leaves, dt, theta, rcond, eta):
                 continue
             others = [ln for ln in leaves if ln not in sibs]
             if (_model_bic(a, others + [parent], n, dt, theta)
-                    <= _model_bic(a, others + sibs, n, dt, theta)):
+                    < _model_bic(a, others + sibs, n, dt, theta)):
                 leaves = others + [parent]
                 changed = True
     return leaves
@@ -774,23 +798,27 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=1.5, rcond=1e-4, eta=1e-4,
       weighted-NRMSE net error.  This tends to find better-fitting partitions,
       and so can retain more regions than the paper reports for a given system.
     - The ridge parameter is chosen by generalized cross-validation rather than
-      the paper's BIC fixed-point iteration.  It governs the SVD row-pruning
-      selection only and does not shrink the returned local operator, so on
-      well-conditioned data -- where the selected ridge tends to zero -- each
+      the paper's BIC fixed-point iteration.  It shrinks the local operator as in
+      [1]_, but this selection rule effectively never chooses a nonzero ridge
+      once the small singular values have been truncated, so in practice each
       region reduces to a plain truncated-SVD DMD fit.
-    - Mode amplitudes are fitted by least squares over all snapshots rather
-      than from a single initial condition.
-    - A region's operator is fitted to its snapshot block directly, rather than
-      to the block pre-multiplied by the region's membership; the membership
-      weights the model selection and the final blend instead.
+    - Mode amplitudes are fitted by least squares over all snapshots rather than
+      from the first snapshot alone.  This fits a given set of regions more
+      accurately than [1]_ does, which in turn weakens the case for splitting,
+      so fewer regions may be selected than the paper reports.
     - The explicit error model that [1]_ applies to whiten the data before
       fitting is not implemented, so noisy data is fitted as given.
-    - The sigmoid steepness is set from the norm of a split's orientation
-      components alone; [1]_ writes the norm of the whole coefficient vector,
-      which also includes the boundary offset.
+    - The input is used as supplied, with the singular-value cutoff applied
+      relative to the largest singular value.  [1]_ instead rescales every data
+      set to ``[0, 1]`` and applies `rcond` as an absolute cutoff; rescale the
+      input yourself to follow that convention.
     - A region is only split along an axis if it spans at least 4 rows or 8
       columns, which [1]_ does not require; very small regions are therefore
       left intact.
+
+    The default ``theta=1.5`` is the lower end of the range given in [1]_, which
+    used ``theta=3`` for its own reported results; the larger value favours
+    fewer regions.
 
     Model order is selected as in [1]_, in two passes over the whole model's
     criterion.  The forward pass splits every splittable region of a level
