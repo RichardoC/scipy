@@ -172,10 +172,11 @@ def _regularized_svd(x1, rcond):
 
     Returns ``(U_r, s_r, Vh_r)``.  Small singular values (relative to the
     largest) are truncated, a ridge parameter is chosen by generalized
-    cross-validation, and rows of the reconstructed right singular modes with
-    negligible relative mean are pruned.  The GCV grid is scaled by the leading
-    squared singular value so the selection is invariant to the data's overall
-    magnitude.
+    cross-validation, and rows of the right singular modes with negligible
+    relative mean are pruned.  The GCV grid is scaled by the leading squared
+    singular value so the selection is invariant to the data's overall magnitude,
+    and includes zero -- which, once the small singular values have been
+    truncated, is what it almost always selects, leaving a plain truncated SVD.
     """
     u, s, vh = np.linalg.svd(x1, full_matrices=False)
     if s.size == 0 or s[0] == 0:
@@ -227,8 +228,10 @@ def _regularized_svd(x1, rcond):
     #    the operator rather than only into this row selection.  Here
     #    ``s_map = diag(s**2 / (s**2 + delta)) Vh``, so the caller's
     #    ``s_map.conj().T / s`` is ``V diag(s / (s**2 + delta))`` -- the ridge
-    #    pseudo-inverse of Sigma, which tends to ``V Sigma^-1`` as delta -> 0.
-    return u[:, rows], s[rows], s_map[rows]
+    #    pseudo-inverse of Sigma.  With no ridge that is ``Vh`` exactly, so use
+    #    the factor the decomposition already gives rather than rebuilding it.
+    vh_r = vh[rows] if delta == 0.0 else s_map[rows]
+    return u[:, rows], s[rows], vh_r
 
 
 def _dmd_operator(block, dt, rcond):
@@ -260,7 +263,7 @@ def _dmd_reconstruct(model, n, dt):
 
     Computes each mode's contribution ``b_i lambda_i^k`` directly in log space
     with an overflow-only guard.  In-region reconstruction is therefore exact
-    (the amplitudes reproduce the first snapshot exactly); forecasting
+    (the amplitudes are fixed to reproduce the first snapshot); forecasting
     a growing mode grows correctly, saturating only at the float64 ceiling.
     """
     omega, phi, b = model
@@ -340,7 +343,7 @@ class _Node:
     # split share a unique ``split_id``, which is how sibling pairs are found
     # during pruning (no object-identity tricks required).
     __slots__ = ('phi', 'level', 'path', 'model', 'bbox', 'oblique', 'spans',
-                 'split_vector', 'sse')
+                 'split_vector', 'sse', 'nrmse')
 
     def __init__(self, phi, level, path):
         self.phi = phi
@@ -352,6 +355,7 @@ class _Node:
         self.spans = None
         self.split_vector = path[-1][0] if path else None
         self.sse = None                       # cached `_region_sse` (see below)
+        self.nrmse = None                     # cached `_region_nrmse`
 
 
 def _fit_node(a, node, dt, rcond, eta):
@@ -408,6 +412,13 @@ def _region_sse(a, node, dt):
     return float(np.sum(node.phi * np.abs(recon - a) ** 2))
 
 
+def _leaf_nrmse(a, node, dt):
+    """`_region_nrmse` for a node, cached (the model and data never change)."""
+    if node.nrmse is None:
+        node.nrmse = _region_nrmse(a, node, dt)
+    return node.nrmse
+
+
 def _region_nrmse(a, node, dt):
     """Normalised RMSE of a region's local model, over the region's own extent.
 
@@ -435,7 +446,7 @@ def _model_wnrmse(a, nodes, dt):
     for nd in nodes:
         if nd.model is None or nd.bbox is None:
             continue
-        total += float(nd.phi.sum()) / denom * _region_nrmse(a, nd, dt)
+        total += float(nd.phi.sum()) / denom * _leaf_nrmse(a, nd, dt)
     return total
 
 
@@ -526,9 +537,9 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
     """Grow the decomposition tree one complete level at a time.
 
     Following [1]_, every splittable leaf of a level is split -- each at the
-    position that minimises the model's information criterion -- before the
-    level as a whole is assessed, and growth continues while a completed level
-    lowers that criterion.  The pass therefore stops one level *after* the best
+    position that minimises the model's weighted net error -- before the level as
+    a whole is assessed, and growth continues while a completed level lowers the
+    model's information criterion.  The pass therefore stops one level *after* the best
     one, deliberately over-growing the tree; `_prune` then selects the regions
     that are kept.  Returning the over-grown tree is what allows the backward
     pass to reach models that a greedy split-by-split rule cannot.
@@ -587,7 +598,7 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
 
 def _prune(a, leaves, dt, theta, rcond, eta):
     """Backward elimination: collapse sibling pairs back into their parent while
-    that does not raise the whole model's BIC.
+    that strictly lowers the whole model's BIC.
 
     This pass performs the model selection, `_forward_pass` having deliberately
     over-grown the tree, as in [1]_.  It runs the tree in reverse: each
@@ -793,8 +804,8 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
 
     See Also
     --------
-    scipy.linalg.svd : Singular value decomposition used by each local fit.
-    scipy.linalg.eig : Eigendecomposition of each reduced operator.
+    numpy.linalg.svd : Singular value decomposition used by each local fit.
+    numpy.linalg.eig : Eigendecomposition of each reduced operator.
 
     Notes
     -----
@@ -832,9 +843,9 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
       relative to the largest singular value.  [1]_ instead rescales every data
       set to ``[0, 1]`` and applies `rcond` as an absolute cutoff; rescale the
       input yourself to follow that convention.
-    - A region is only split along an axis if it spans at least 4 rows or 8
-      columns, which [1]_ does not require; very small regions are therefore
-      left intact.
+    - A row split requires a region at least 4 rows deep, a column split one at
+      least 8 columns wide, and an oblique split both; [1]_ imposes no such
+      minimum, so very small regions are left intact here.
 
     Model order is selected as in [1]_, in two passes over the whole model's
     criterion.  The forward pass splits every splittable region of a level
@@ -842,7 +853,7 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
     criterion; when it is the level comparison that stops the growth, the tree is
     left deliberately over-grown by one level.  The backward pass then runs the
     tree in reverse, reviewing each pair of children deepest-level first and
-    collapsing it back into its parent whenever that does not raise the
+    collapsing it back into its parent whenever that strictly lowers the
     criterion, until a full sweep changes nothing.  [1]_ notes that the resulting
     tree is not uniquely determined by this procedure.  Growth also stops at
     ``max_depth`` or at an internal cap on the number of regions, in which case
@@ -857,10 +868,13 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
     multi-region forecast that would rely on an oblique region past the data is
     bounded and finite but not accuracy-guaranteed.
 
-    Every decision of both passes is taken on the information criterion of the
-    *complete* model, never on that of one region in isolation, as in [1]_; the
-    summed membership-weighted region errors are used as an additive proxy for
-    the global error, which they equal in the crisp (``smoothness -> 0``) limit.
+    The two costs of [1]_ are kept distinct.  Where a boundary is placed is
+    decided by the weighted net error of the resulting model -- the local cost --
+    while how many regions to keep is decided by the information criterion of the
+    *complete* model, in the level test and in pruning.  Neither is ever taken
+    over one region in isolation.  For the criterion, the summed
+    membership-weighted region errors are used as an additive proxy for the
+    global error, which they equal in the crisp (``smoothness -> 0``) limit.
     The memberships weight the squared errors linearly, so that a split lowers
     the criterion only by fitting the data better.  The reported ``bic`` is a
     diagnostic computed differently: it uses the true global reconstruction error
@@ -960,8 +974,7 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
     recon = _reconstruct(leaves, u1, u2_out, dt, out_cols, t, m, real)
 
     n = work.size
-    fit_cols = min(out_cols, t)
-    sse = float(np.sum(np.abs(recon[:, :fit_cols] - work[:, :fit_cols]) ** 2))
+    sse = float(np.sum(np.abs(recon[:, :t] - work) ** 2))
     total_k = sum(_region_k(ln, theta) for ln in leaves if ln.model is not None)
     bic = _bic(sse, n, total_k)
 

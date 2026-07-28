@@ -261,21 +261,31 @@ class TestFSRD:
             with pytest.raises(ValueError, match="infs or NaNs"):
                 fsrd(xp.asarray(y))
 
-    def test_invalid_arguments(self, xp):
+    @pytest.mark.parametrize('shape, match', [
+        ((2, 3, 4), '2-D'),
+        ((5,), '2-D'),
+        ((0, 5), 'empty'),
+        ((3, 1), 'two columns'),
+    ])
+    def test_invalid_input_shapes(self, xp, shape, match):
+        with pytest.raises(ValueError, match=match):
+            fsrd(xp.asarray(np.ones(shape)))
+
+    @pytest.mark.parametrize('kwargs, match', [
+        (dict(max_depth=-1), 'max_depth'),
+        (dict(max_depth=999), 'max_depth'),
+        (dict(forecast=-1), 'forecast'),
+        (dict(dt=0.0), 'dt'),
+        (dict(rcond=0.0), 'rcond'),
+        (dict(eta=1.5), 'eta'),
+        (dict(smoothness=0.0), 'smoothness'),
+        (dict(theta=0.5), 'theta'),
+        (dict(forecast=10**9), 'output size'),
+    ])
+    def test_invalid_arguments(self, xp, kwargs, match):
         x = xp.asarray(np.ones((3, 10)))
-        with pytest.raises(ValueError):
-            fsrd(xp.asarray(np.ones((2, 3, 4))))       # not 2-D
-        with pytest.raises(ValueError):
-            fsrd(xp.asarray(np.ones(5)))               # 1-D
-        with pytest.raises(ValueError):
-            fsrd(xp.asarray(np.ones((0, 5))))          # empty
-        with pytest.raises(ValueError):
-            fsrd(xp.asarray(np.ones((3, 1))))          # T < 2
-        for kw in (dict(max_depth=-1), dict(max_depth=999), dict(forecast=-1),
-                   dict(dt=0.0), dict(rcond=0.0), dict(eta=1.5),
-                   dict(smoothness=0.0), dict(theta=0.5), dict(forecast=10**9)):
-            with pytest.raises(ValueError):
-                fsrd(x, **kw)
+        with pytest.raises(ValueError, match=match):
+            fsrd(x, **kwargs)
 
 
 class TestFSRDInternals:
@@ -370,8 +380,12 @@ class TestFSRDInternals:
         expected = 1.0 / (1.0 + np.exp(-tau * z))
         got = _sigmoid(u1, u2, v, tau)
         assert_allclose(got, expected, atol=1e-14)
-        # SM eq (S19): a split and its complement form a partition of unity.
-        assert_allclose(got + (1.0 - got), np.ones_like(got), atol=1e-14)
+        # SM eq (S19): the activation is bounded and monotone in z, so the split
+        # and its complement genuinely divide the grid rather than trivially
+        # summing to one.
+        assert got.min() >= 0.0 and got.max() <= 1.0
+        order = np.argsort(z.ravel())
+        assert np.all(np.diff(got.ravel()[order]) >= -1e-12)
 
     def test_bic_matches_sm_s37_s39(self):
         # SM eqs (S37)-(S39) with the documented dropped constant:
