@@ -8,8 +8,8 @@ from scipy.linalg import fsrd
 from scipy.linalg._fsrd import (
     FSRDResult, FSRDRegion,
     _Node, _try_split, _prune, _fit_node, _bic, _region_k, _sigmoid,
-    _topological_transform, _row_spans, _region_sse, _node_local_recon,
-    _forward_pass,
+    _topological_transform, _row_spans, _node_local_recon,
+    _forward_pass, _model_sse, _model_bic, _reconstruct, _sse_floor,
 )
 from scipy._lib._array_api import make_xp_test_case, xp_assert_close
 
@@ -354,7 +354,7 @@ class TestFSRDInternals:
         root = _Node(np.ones((m, t)), 0, [])
         left, right = _try_split(x, root, np.array([-0.5, 0.0, 1.0]), 0,
                                  u1, u2, 1.0, 1e-4, 1e-4, 0.05)
-        pruned = _prune(x, [left, right], 1.0, 1.5, 1e-4, 1e-4)
+        pruned = _prune(x, [left, right], u1, u2, 1.0, 1.5, 1e-4, 1e-4)
         assert len(pruned) == 1
 
     def test_forward_pass_overgrows_and_prune_selects(self):
@@ -367,46 +367,106 @@ class TestFSRDInternals:
         u1 = np.linspace(0, 1, m)
         u2 = np.linspace(0, 1, t)
         grown = _forward_pass(x, u1, u2, 1.0, 1e-4, 1e-4, 0.05, 1.5, 3, True)
-        pruned = _prune(x, grown, 1.0, 1.5, 1e-4, 1e-4)
+        pruned = _prune(x, grown, u1, u2, 1.0, 1.5, 1e-4, 1e-4)
         assert len(pruned) < len(grown), 'pruning should select a smaller tree'
         assert len(pruned) == 1
 
-    def test_region_sse_weights_membership_linearly(self):
-        # The membership must weight the *squared* error, so that halving it
-        # halves the reported error.  Weighting the residual instead applies
-        # phi**2 (halving would quarter it), and since w**2 + (1-w)**2 <= 1 a
-        # fuzzy split would then lower the criterion without fitting anything
-        # better -- the mechanism behind over-segmentation.
-        x = _two_regime()
-        m, t = x.shape
-        full = _Node(np.ones((m, t)), 0, [])
-        _fit_node(x, full, 1.0, 1e-4, 1e-4)
-        half = _Node(0.5 * np.ones((m, t)), 0, [])
-        _fit_node(x, half, 1.0, 1e-4, 1e-4)
-        # uniform membership => identical bounding box, hence an identical fit
-        assert half.bbox == full.bbox
-        assert_allclose(_region_sse(x, half, 1.0),
-                        0.5 * _region_sse(x, full, 1.0), rtol=1e-10)
-
-    def test_split_of_unchanged_fit_does_not_lower_sse(self):
-        # Partition of unity (phi_left + phi_right == phi_parent) plus linear
-        # weighting means a split cannot reduce the criterion's error term
-        # unless the local fits actually improve.
-        x = _two_regime()
+    @staticmethod
+    def _split_model(x, seed=0):
+        """A fitted two-leaf model on noisy two-regime data, plus its grid."""
+        rng = np.random.default_rng(seed)
+        x = x + 1e-2 * rng.standard_normal(x.shape)
         m, t = x.shape
         u1 = np.linspace(0, 1, m)
         u2 = np.linspace(0, 1, t)
         root = _Node(np.ones((m, t)), 0, [])
         _fit_node(x, root, 1.0, 1e-4, 1e-4)
-        left, right = _try_split(x, root, np.array([-0.5, 0.0, 1.0]), 0,
-                                 u1, u2, 1.0, 1e-4, 1e-4, 0.05)
-        # weight the *parent's* own residual by each child's membership: the two
-        # halves must add back up to the parent's error, to within the effect of
-        # each child's eta-truncated bounding box.
-        recon = _node_local_recon(root, 1.0, x.shape)
-        sq = np.abs(recon - x) ** 2
-        halves = float(np.sum(left.phi * sq) + np.sum(right.phi * sq))
-        assert_allclose(halves, _region_sse(x, root, 1.0), rtol=1e-10)
+        pair = _try_split(x, root, np.array([-0.5, 0.0, 1.0]), 0,
+                          u1, u2, 1.0, 1e-4, 1e-4, 0.05)
+        assert pair is not None
+        return x, u1, u2, list(pair)
+
+    def test_model_sse_is_the_assembled_global_error(self):
+        # SM eq (A-SSE): the criterion's error term is ||X - X_global||_F^2,
+        # "a globally defined SSE evaluation of the full model", explicitly
+        # not derived from the locally defined per-region errors.  It must
+        # therefore be exactly the error of the blended reconstruction the
+        # call returns -- one assembly path, no drift.
+        x, u1, u2, leaves = self._split_model(_two_regime())
+        m, t = x.shape
+        recon = _reconstruct(leaves, u1, u2, 1.0, t, t, m, True)
+        assembled = _model_sse(x, leaves, u1, u2, 1.0)
+        assert_allclose(assembled, float(np.sum((recon - x) ** 2)), rtol=1e-12)
+
+        # ...and not the additive, membership-weighted sum of the regions' own
+        # local errors this replaced.  That proxy is a different number, by far
+        # more than the tolerance above, so the check is not vacuous.
+        additive = sum(
+            float(np.sum(nd.phi * np.abs(
+                _node_local_recon(nd, 1.0, x.shape) - x) ** 2))
+            for nd in leaves)
+        assert abs(additive - assembled) / assembled > 1e-6
+
+    def test_criterion_scoring_does_not_warn(self):
+        # Scoring a candidate model now blends it through `_reconstruct`,
+        # which reports an unsupportable forecast horizon.  The criterion
+        # compares against the input window only, so it must never reach that
+        # report -- checked on data that does provoke it when a forecast is
+        # actually requested (`test_unsupported_forecast_warns`).
+        rows, cols = 30, 60
+        g1, g2 = np.meshgrid(np.linspace(0, 1, rows), np.linspace(0, 1, cols),
+                             indexing='ij')
+        x = np.sin(8 * g2) + 0.1 * g1
+        corner = g1 + g2 > 1
+        x[corner] = 3 * np.cos(12 * g2[corner])
+        u1 = np.linspace(0, 1, rows)
+        u2 = np.linspace(0, 1, cols)
+        grown = _forward_pass(x, u1, u2, 1.0, 1e-4, 1e-4, 0.05, 3.0, 2, True)
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', RuntimeWarning)
+            _model_bic(x, grown, x.size, u1, u2, 1.0, 3.0)
+            _prune(x, grown, u1, u2, 1.0, 3.0, 1e-4, 1e-4)
+            fsrd(x, max_depth=2)
+
+    def test_model_sse_floors_representation_round_off(self):
+        # The criterion is a log-likelihood in the SSE, so it is unbounded
+        # below as the SSE goes to zero.  On data a single operator already
+        # reproduces to machine precision the residual is round-off in the
+        # exponential reconstruction, which shrinks with a region's time span
+        # -- so without a floor every temporal split would read as a better
+        # fit.  Under the floor the error term stops moving and only the
+        # complexity term separates two models.
+        x = _orbit(_rot(0.3, 0.99), [1.0, 0.0], 120)
+        m, t = x.shape
+        u1 = np.linspace(0, 1, m)
+        u2 = np.linspace(0, 1, t)
+        root = _Node(np.ones((m, t)), 0, [])
+        _fit_node(x, root, 1.0, 1e-4, 1e-4)
+        recon = _reconstruct([root], u1, u2, 1.0, t, t, m, True)
+        raw = float(np.sum((recon - x) ** 2))
+        floor = _sse_floor(x)
+        assert raw < floor                     # a machine-precision fit
+        assert_allclose(_model_sse(x, [root], u1, u2, 1.0), floor, rtol=1e-12)
+        # and the floor is relative, so it is scale invariant
+        assert_allclose(_sse_floor(1e6 * x), 1e12 * floor, rtol=1e-12)
+
+    def test_reported_bic_is_the_selection_criterion(self):
+        # The value reported back is now the very quantity the forward and
+        # backward passes minimise, so pruning -- which only ever collapses a
+        # pair when that strictly lowers the criterion -- can never leave a
+        # worse ``bic`` than the over-grown tree it started from.
+        for x in (_two_regime(), _orbit(_rot(0.3, 0.99), [1.0, 0.0], 90)):
+            selected = fsrd(x, max_depth=3)
+            grown = fsrd(x, max_depth=3, prune=False)
+            assert selected.bic <= grown.bic
+            m, t = x.shape
+            u1 = np.linspace(0, 1, m)
+            u2 = np.linspace(0, 1, t)
+            leaves = _prune(x, _forward_pass(x, u1, u2, 1.0, 1e-4, 1e-4, 0.05,
+                                             3.0, 3, True),
+                            u1, u2, 1.0, 3.0, 1e-4, 1e-4)
+            assert_allclose(_model_bic(x, leaves, x.size, u1, u2, 1.0, 3.0),
+                            selected.bic, rtol=1e-12)
 
     # ------------------------------------------------------------------
     # Supplementary-material fidelity checks (audit regression guards).

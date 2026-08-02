@@ -34,6 +34,10 @@ _MAX_NODES = 4096            # ceiling on the total number of regions grown
 _MAX_ELEMENTS = 50_000_000   # ceiling on ``M * (T + forecast)`` output cells
                              # (peak memory is several times this; see `fsrd`)
 _LOG_CLIP = 700.0            # exp(700) < float64 max; overflow-only guard
+_SSE_FLOOR_REL = 1e-24       # relative floor on the criterion's error term:
+                             # a Frobenius residual of 1e-12 times the data's
+                             # own norm, below which nothing is model error
+                             # (see `_sse_floor`)
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +349,7 @@ class _Node:
     # split share a unique ``split_id``, which is how sibling pairs are found
     # during pruning (no object-identity tricks required).
     __slots__ = ('phi', 'level', 'path', 'model', 'bbox', 'oblique', 'spans',
-                 'split_vector', 'sse', 'nrmse')
+                 'split_vector', 'terms', 'nrmse')
 
     def __init__(self, phi, level, path):
         self.phi = phi
@@ -356,7 +360,7 @@ class _Node:
         self.oblique = False
         self.spans = None
         self.split_vector = path[-1][0] if path else None
-        self.sse = None                       # cached `_region_sse` (see below)
+        self.terms = None                     # cached `_leaf_blend_terms`
         self.nrmse = None                     # cached `_region_nrmse`
 
 
@@ -393,25 +397,90 @@ def _node_local_recon(node, dt, shape):
     return out
 
 
+def _leaf_blend_terms(leaf, u1, u2_out, dt, out_cols, orig_cols):
+    """One leaf's membership-weighted contribution to the assembled model.
+
+    Returns ``(m0, m1, t0, col_end, phi * f_i, phi)``: the block of the output
+    grid the leaf occupies, its weighted local reconstruction, and the weights
+    themselves (needed to renormalise the blend).
+
+    The terms depend on the leaf alone -- its path, its fitted model and its
+    bounding box, none of which change once `_fit_node` has run -- so for the
+    input window they are cached on the node and reused across the many
+    candidate models the criterion scores.  A forecast horizon extends some
+    regions and not others, so those terms are not cached.
+    """
+    in_window = out_cols == orig_cols
+    if in_window and leaf.terms is not None:
+        return leaf.terms
+    m0, m1, t0, t1 = leaf.bbox
+    if leaf.oblique:
+        # An oblique region is not extrapolated along its diagonal: its
+        # model is only evaluated over its own in-window span, since the
+        # inverse transform has to map the result back onto that span.
+        col_end = min(t1, orig_cols)
+    else:
+        col_end = out_cols if t1 >= orig_cols else t1
+    qn = col_end - t0
+    # membership only over the region's bounding box (rows m0:m1, cols t0:)
+    u1r = u1[m0:m1]
+    u2r = u2_out[t0:col_end]
+    phi = np.ones((m1 - m0, qn))
+    with np.errstate(under='ignore'):
+        for v, tau, side, _sid in leaf.path:
+            om = _sigmoid(u1r, u2r, v, tau)
+            phi = phi * (om if side == 0 else (1.0 - om))
+    dense = _dmd_reconstruct(leaf.model, qn, dt)
+    if leaf.oblique:
+        dense = _inverse_topological_transform(dense, leaf.spans, m1 - m0, qn)
+    terms = (m0, m1, t0, col_end, phi * dense, phi)
+    if in_window:
+        leaf.terms = terms
+    return terms
+
+
+def _reconstruct(leaves, u1, u2_out, dt, out_cols, orig_cols, shape_rows, real,
+                 warn=True):
+    """Blend the leaves' local reconstructions over the output grid.
+
+    Each region is reconstructed over exactly its own bounding box; a region
+    whose box reaches the last input column is extended through the forecast
+    horizon.  Cells are renormalised so the fuzzy memberships form a partition
+    of unity even after the ``eta`` support cutoff.
+
+    This is the single assembly path: the model-selection criterion scores a
+    candidate set of leaves by blending it here too (see `_model_sse`), so the
+    quantity that is minimised and the array that is returned cannot drift
+    apart.  ``warn=False`` suppresses the unsupported-forecast report for that
+    internal use, which never asks for a forecast in the first place.
+    """
+    accum = np.zeros((shape_rows, out_cols), dtype=complex)
+    weight = np.zeros((shape_rows, out_cols))
+    for leaf in leaves:
+        if leaf.model is None:
+            continue
+        m0, m1, t0, col_end, contrib, phi = _leaf_blend_terms(
+            leaf, u1, u2_out, dt, out_cols, orig_cols)
+        accum[m0:m1, t0:col_end] += contrib
+        weight[m0:m1, t0:col_end] += phi
+    unsupported = warn and out_cols > orig_cols and bool(
+        np.any(weight[:, orig_cols:] <= _EPS))
+    if unsupported:
+        # Only regions that can be extended past the data contribute to the
+        # forecast; where none does, the cells stay at zero, which must not be
+        # mistaken for a prediction.
+        warnings.warn("no region could be extrapolated over part of the "
+                      "requested forecast horizon; those entries of the "
+                      "reconstruction are zero rather than predicted",
+                      RuntimeWarning, stacklevel=3)
+    weight = np.where(weight > _EPS, weight, 1.0)
+    accum = accum / weight
+    return accum.real if real else accum
+
+
 def _bic(sse, n, k):
     mse = sse / n + np.finfo(float).tiny
     return n * np.log(mse) + k * np.log(n)
-
-
-def _region_sse(a, node, dt):
-    """Membership-weighted squared error of a node's local model.
-
-    The membership weights the *squared* error (rather than the residual), so
-    that the weights enter linearly.  Because a split's two children satisfy
-    ``phi_left + phi_right == phi_parent`` pointwise, the children's summed
-    weighted error then equals the parent's exactly whenever the underlying
-    reconstruction is unchanged: a split can only lower this term by actually
-    fitting the data better.  Weighting the residual instead would apply
-    ``phi**2``, and since ``w**2 + (1 - w)**2 <= 1`` any split would lower the
-    term for free, biasing the model-order selection towards more regions.
-    """
-    recon = _node_local_recon(node, dt, a.shape)
-    return float(np.sum(node.phi * np.abs(recon - a) ** 2))
 
 
 def _leaf_nrmse(a, node, dt):
@@ -452,25 +521,58 @@ def _model_wnrmse(a, nodes, dt):
     return total
 
 
-def _leaf_sse(a, node, dt):
-    """`_region_sse` for a node, cached (the model and data never change)."""
-    if node.sse is None:
-        node.sse = _region_sse(a, node, dt)
-    return node.sse
+def _sse_floor(a):
+    """Smallest squared error attributable to the model rather than round-off.
+
+    `_bic` is a log-likelihood in the SSE and so is unbounded below as the SSE
+    goes to zero.  On data that a single operator already reproduces to machine
+    precision the residual is not model error at all: it is round-off in the
+    exponential reconstruction, ``b_i lambda_i^k``, whose relative size grows
+    with the number of steps ``k`` a region spans.  Splitting a region in time
+    halves that span and so shrinks the residual, and without a floor every
+    such split would read as an improvement of the fit -- the criterion would
+    segment an exactly linear system indefinitely, chasing round-off.
+
+    The floor is a fixed relative one, ``_SSE_FLOOR_REL`` times the data's own
+    energy, so it scales with the data and leaves any genuine residual (which
+    is many orders of magnitude larger) untouched.  Two models that both sit
+    under it are separated by their complexity alone, which is the intended
+    outcome: neither explains the data any better than the other.
+    """
+    return _SSE_FLOOR_REL * float(np.sum(np.abs(a) ** 2))
 
 
-def _model_bic(a, nodes, n, dt, theta):
+def _model_sse(a, nodes, u1, u2, dt):
+    """``|| X - X_global ||_F^2`` of the model assembled from ``nodes``.
+
+    The criterion of [1]_ defines its error term on the *assembled* global
+    model, explicitly not as anything derived from the local per-region errors
+    the split search uses.  So the candidate leaves are blended exactly as the
+    returned reconstruction is -- by `_reconstruct` itself, so the two cannot
+    drift apart -- and the result compared against the data.
+
+    The blend covers the input window only: that is what the criterion compares
+    against, and it also keeps this path structurally clear of `_reconstruct`'s
+    unsupported-forecast warning, which only a forecast horizon can trigger.
+    """
+    rows, cols = a.shape
+    recon = _reconstruct(nodes, u1, u2, dt, cols, cols, rows,
+                         not np.iscomplexobj(a), warn=False)
+    return max(float(np.sum(np.abs(recon - a) ** 2)), _sse_floor(a))
+
+
+def _model_bic(a, nodes, n, u1, u2, dt, theta):
     """Information criterion of a whole candidate model (all of its leaves).
 
     Split and prune decisions compare this quantity, following the criterion of
-    [1]_, which is defined over the *complete* model rather than one region: the
-    memberships of the current leaves form a partition of unity, so the summed
-    membership-weighted errors are a convex combination of the local errors and
-    hence an additive proxy for the global error.  Judging a split by the split
-    node's error alone would instead reward shrinking a residual that is already
-    negligible in the full model, which drives over-segmentation.
+    [1]_, which is defined over the *complete* model rather than one region:
+    the error term is the squared error of the fully assembled reconstruction
+    (`_model_sse`), and the complexity term the summed per-region complexity.
+    Judging a split by the split node's error alone would instead reward
+    shrinking a residual that is already negligible in the full model, which
+    drives over-segmentation.
     """
-    sse = sum(_leaf_sse(a, nd, dt) for nd in nodes)
+    sse = _model_sse(a, nodes, u1, u2, dt)
     k = sum(_region_k(nd, theta) for nd in nodes)
     return _bic(sse, n, k)
 
@@ -560,7 +662,7 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
     leaves = [root]
     if root.model is None:
         return leaves          # nothing to fit (e.g. an all-zero input)
-    best_bic = _model_bic(a, leaves, n, dt, theta)
+    best_bic = _model_bic(a, leaves, n, u1, u2, dt, theta)
     sid = 0
     for _ in range(max_depth):
         new_leaves = []
@@ -595,14 +697,14 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
         if not changed:
             break
         leaves = new_leaves
-        level_bic = _model_bic(a, leaves, n, dt, theta)
+        level_bic = _model_bic(a, leaves, n, u1, u2, dt, theta)
         if level_bic >= best_bic or len(leaves) >= _MAX_NODES:
             break                     # this level overshoots; hand it to `_prune`
         best_bic = level_bic
     return leaves
 
 
-def _prune(a, leaves, dt, theta, rcond, eta):
+def _prune(a, leaves, u1, u2, dt, theta, rcond, eta):
     """Backward elimination: collapse sibling pairs back into their parent while
     that strictly lowers the whole model's BIC.
 
@@ -636,62 +738,11 @@ def _prune(a, leaves, dt, theta, rcond, eta):
             if parent.model is None:
                 continue
             others = [ln for ln in leaves if ln not in sibs]
-            if (_model_bic(a, others + [parent], n, dt, theta)
-                    < _model_bic(a, others + sibs, n, dt, theta)):
+            if (_model_bic(a, others + [parent], n, u1, u2, dt, theta)
+                    < _model_bic(a, others + sibs, n, u1, u2, dt, theta)):
                 leaves = others + [parent]
                 changed = True
     return leaves
-
-
-def _reconstruct(leaves, u1, u2_out, dt, out_cols, orig_cols, shape_rows, real):
-    """Blend the leaves' local reconstructions over the output grid.
-
-    Each region is reconstructed over exactly its own bounding box; a region
-    whose box reaches the last input column is extended through the forecast
-    horizon.  Cells are renormalised so the fuzzy memberships form a partition
-    of unity even after the ``eta`` support cutoff.
-    """
-    accum = np.zeros((shape_rows, out_cols), dtype=complex)
-    weight = np.zeros((shape_rows, out_cols))
-    for leaf in leaves:
-        if leaf.model is None:
-            continue
-        m0, m1, t0, t1 = leaf.bbox
-        if leaf.oblique:
-            # An oblique region is not extrapolated along its diagonal: its
-            # model is only evaluated over its own in-window span, since the
-            # inverse transform has to map the result back onto that span.
-            col_end = min(t1, orig_cols)
-        else:
-            col_end = out_cols if t1 >= orig_cols else t1
-        qn = col_end - t0
-        # membership only over the region's bounding box (rows m0:m1, cols t0:)
-        u1r = u1[m0:m1]
-        u2r = u2_out[t0:col_end]
-        phi = np.ones((m1 - m0, qn))
-        with np.errstate(under='ignore'):
-            for v, tau, side, _sid in leaf.path:
-                om = _sigmoid(u1r, u2r, v, tau)
-                phi = phi * (om if side == 0 else (1.0 - om))
-        dense = _dmd_reconstruct(leaf.model, qn, dt)
-        if leaf.oblique:
-            dense = _inverse_topological_transform(dense, leaf.spans,
-                                                   m1 - m0, qn)
-        accum[m0:m1, t0:col_end] += phi * dense
-        weight[m0:m1, t0:col_end] += phi
-    unsupported = out_cols > orig_cols and bool(
-        np.any(weight[:, orig_cols:] <= _EPS))
-    if unsupported:
-        # Only regions that can be extended past the data contribute to the
-        # forecast; where none does, the cells stay at zero, which must not be
-        # mistaken for a prediction.
-        warnings.warn("no region could be extrapolated over part of the "
-                      "requested forecast horizon; those entries of the "
-                      "reconstruction are zero rather than predicted",
-                      RuntimeWarning, stacklevel=3)
-    weight = np.where(weight > _EPS, weight, 1.0)
-    accum = accum / weight
-    return accum.real if real else accum
 
 
 # ---------------------------------------------------------------------------
@@ -909,17 +960,34 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
     decided by the weighted net error of the resulting model -- the local cost --
     while how many regions to keep is decided by the information criterion of the
     *complete* model, in the level test and in pruning.  Neither is ever taken
-    over one region in isolation.  For the criterion, the summed
-    membership-weighted region errors are used as an additive proxy for the
-    global error, which they equal in the crisp (``smoothness -> 0``) limit.
-    The memberships weight the squared errors linearly, so that a split lowers
-    the criterion only by fitting the data better.  The reported ``bic`` is a
-    diagnostic computed differently: it uses the true global reconstruction error
-    and drops an additive constant, so it is not comparable to a BIC from another
-    tool, and because it is not the quantity the two passes minimise it need not
-    order two models the same way they do -- an over-grown tree obtained with
-    ``prune=False`` can carry the lower reported ``bic``.  Use it to compare fits
-    of the same model order, not to choose a model order.
+    over one region in isolation.  The criterion's error term is the squared
+    error of the fully assembled reconstruction,
+    :math:`\| X - \tilde{X}_{global} \|_F^2` -- a candidate set of regions is
+    blended exactly as the returned ``reconstruction`` is and then compared with
+    the data -- rather than anything summed from the regions' own local errors.
+    The reported ``bic`` is therefore precisely the quantity both passes
+    minimise, so it does order models as they do; because pruning only ever
+    collapses a pair of regions when that strictly lowers it, the selected model
+    never carries a higher ``bic`` than the over-grown tree ``prune=False``
+    returns.  An additive constant is dropped from it, so it remains
+    incomparable to a BIC from another tool.
+
+    Two numerical details of that criterion are worth knowing.  Because it is a
+    log-likelihood in the squared error it is unbounded below as that error goes
+    to zero, and on data a single operator already reproduces to machine
+    precision the residual is not model error but round-off in the exponential
+    reconstruction -- round-off that shrinks with the number of steps a region
+    spans, so that splitting in time would appear to improve the fit
+    indefinitely.  The error term is therefore floored at ``1e-24`` times the
+    data's own squared norm (a relative Frobenius residual of ``1e-12``), below
+    which two models are separated by their complexity alone.  And because the
+    assembled error is not additive over regions, a level of the forward pass
+    can score marginally worse than the level above it even though a deeper one
+    would score much better; growth stops at the first such level, so on some
+    inputs -- particularly at small `theta`, where many regions are affordable
+    -- a deeper tree that the criterion would prefer is not reached.  Raising
+    `max_depth` does not recover it; lowering `smoothness` or raising `theta`
+    changes which levels are compared.
 
     References
     ----------
@@ -1021,7 +1089,7 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
         leaves = _forward_pass(work, u1, u2, dt, rcond, eta, smoothness, theta,
                                max_depth, oblique)
         if prune and len(leaves) > 1:
-            leaves = _prune(work, leaves, dt, theta, rcond, eta)
+            leaves = _prune(work, leaves, u1, u2, dt, theta, rcond, eta)
         recon = _reconstruct(leaves, u1, u2_out, dt, out_cols, t, m, real)
 
     if not np.isfinite(recon).all():
@@ -1044,7 +1112,11 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
     else:
         n = work.size
         with np.errstate(all='ignore'):
-            sse = float(np.sum(np.abs(recon[:, :t] - work) ** 2))
+            # the same quantity the two passes minimised, recomputed from the
+            # reconstruction already in hand rather than by blending again: a
+            # forecast horizon does not touch the in-window columns
+            sse = max(float(np.sum(np.abs(recon[:, :t] - work) ** 2)),
+                      _sse_floor(work))
             bic = _bic(sse, n, sum(_region_k(ln, theta) for ln in fitted))
         if not np.isfinite(bic):
             bic = np.nan
