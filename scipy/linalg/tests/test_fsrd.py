@@ -5,11 +5,14 @@ import pytest
 from numpy.testing import assert_allclose
 
 from scipy.linalg import fsrd
+from scipy.linalg import _fsrd as _fsrd_mod
 from scipy.linalg._fsrd import (
     FSRDResult, FSRDRegion,
     _Node, _try_split, _prune, _fit_node, _bic, _region_k, _sigmoid,
-    _topological_transform, _row_spans, _node_local_recon,
+    _topological_transform, _row_spans, _inverse_topological_transform,
     _forward_pass, _model_sse, _model_bic, _reconstruct, _sse_floor,
+    _dmd_reconstruct, _region_nrmse, _region_transformed_data, _steepness,
+    _delta_c, _delta_centroid,
 )
 from scipy._lib._array_api import make_xp_test_case, xp_assert_close
 
@@ -32,6 +35,34 @@ def _two_regime(n_left=40, n_right=40):
     left = _orbit(_rot(0.15, 0.99), [1.0, 0.0], n_left)
     right = _orbit(_rot(0.9, 0.99), left[:, -1], n_right)
     return np.concatenate([left, right[:, 1:]], axis=1)
+
+
+def _oblique_corner(rows=30, cols=60):
+    # a corner regime cut off by a diagonal boundary: the geometry that forces
+    # oblique regions, and with them the topological transform
+    g1, g2 = np.meshgrid(np.linspace(0, 1, rows), np.linspace(0, 1, cols),
+                         indexing='ij')
+    x = np.sin(8 * g2) + 0.1 * g1
+    corner = g1 + g2 > 1
+    x[corner] = 3 * np.cos(12 * g2[corner])
+    return x
+
+
+def _unweighted_local_recon(node, dt, shape):
+    """One node's *unweighted* local reconstruction on the full ``shape`` grid.
+
+    The per-region error in the original space, which the assembled criterion is
+    contrasted against below.  It is not what the implementation computes
+    anywhere, hence spelled out here rather than imported.
+    """
+    m0, m1, t0, t1 = node.bbox
+    q = t1 - t0
+    dense = _dmd_reconstruct(node.model, q, dt)
+    if node.oblique:
+        dense = _inverse_topological_transform(dense, node.spans, m1 - m0, q)
+    out = np.zeros(shape, dtype=complex)
+    out[m0:m1, t0:t1] = dense
+    return out
 
 
 @make_xp_test_case(fsrd)
@@ -65,11 +96,7 @@ class TestFSRD:
         # own span, so it is not extrapolated along its diagonal; that must not
         # leak the extrapolated columns back inside the window.
         rows, cols = 30, 60
-        g1, g2 = np.meshgrid(np.linspace(0, 1, rows), np.linspace(0, 1, cols),
-                             indexing='ij')
-        x = np.sin(8 * g2) + 0.1 * g1
-        corner = g1 + g2 > 1
-        x[corner] = 3 * np.cos(12 * g2[corner])
+        x = _oblique_corner(rows, cols)
 
         ref = fsrd(xp.asarray(x), oblique=oblique).reconstruction
         for forecast in (1, 7):
@@ -86,12 +113,7 @@ class TestFSRD:
         # Oblique regions are not extrapolated, so a forecast horizon they alone
         # cover cannot be predicted.  Those entries stay zero, which must be
         # announced rather than passed off as a prediction.
-        rows, cols = 30, 60
-        g1, g2 = np.meshgrid(np.linspace(0, 1, rows), np.linspace(0, 1, cols),
-                             indexing='ij')
-        x = np.sin(8 * g2) + 0.1 * g1
-        corner = g1 + g2 > 1
-        x[corner] = 3 * np.cos(12 * g2[corner])
+        x = _oblique_corner()
         with pytest.warns(RuntimeWarning, match='forecast horizon'):
             fsrd(xp.asarray(x), forecast=10)
 
@@ -357,6 +379,23 @@ class TestFSRDInternals:
         pruned = _prune(x, [left, right], u1, u2, 1.0, 1.5, 1e-4, 1e-4)
         assert len(pruned) == 1
 
+    def test_prune_collapses_a_tie(self, monkeypatch):
+        # A pair collapses when the criterion of the collapsed model is smaller
+        # than *or equal to* that of the pair: two regions that buy no
+        # improvement over their parent are never worth keeping.  With the
+        # criterion held flat every collapsible pair is a tie, so the tree must
+        # come all the way back to its root.
+        x = _two_regime()
+        m, t = x.shape
+        u1 = np.linspace(0, 1, m)
+        u2 = np.linspace(0, 1, t)
+        grown = _forward_pass(x, u1, u2, 1.0, 1e-4, 1e-4, 0.05, 3.0, 2, True)
+        assert len(grown) > 1
+        monkeypatch.setattr(_fsrd_mod, '_model_bic',
+                            lambda *args, **kwargs: -1.0)
+        pruned = _prune(x, grown, u1, u2, 1.0, 3.0, 1e-4, 1e-4)
+        assert len(pruned) == 1
+
     def test_forward_pass_overgrows_and_prune_selects(self):
         # The forward pass must overshoot (it splits a level through before
         # assessing it) and the backward pass must do the selection: on a single
@@ -403,7 +442,7 @@ class TestFSRDInternals:
         # more than the tolerance above, so the check is not vacuous.
         additive = sum(
             float(np.sum(nd.phi * np.abs(
-                _node_local_recon(nd, 1.0, x.shape) - x) ** 2))
+                _unweighted_local_recon(nd, 1.0, x.shape) - x) ** 2))
             for nd in leaves)
         assert abs(additive - assembled) / assembled > 1e-6
 
@@ -414,11 +453,7 @@ class TestFSRDInternals:
         # report -- checked on data that does provoke it when a forecast is
         # actually requested (`test_unsupported_forecast_warns`).
         rows, cols = 30, 60
-        g1, g2 = np.meshgrid(np.linspace(0, 1, rows), np.linspace(0, 1, cols),
-                             indexing='ij')
-        x = np.sin(8 * g2) + 0.1 * g1
-        corner = g1 + g2 > 1
-        x[corner] = 3 * np.cos(12 * g2[corner])
+        x = _oblique_corner(rows, cols)
         u1 = np.linspace(0, 1, rows)
         u2 = np.linspace(0, 1, cols)
         grown = _forward_pass(x, u1, u2, 1.0, 1e-4, 1e-4, 0.05, 3.0, 2, True)
@@ -453,7 +488,7 @@ class TestFSRDInternals:
     def test_reported_bic_is_the_selection_criterion(self):
         # The value reported back is now the very quantity the forward and
         # backward passes minimise, so pruning -- which only ever collapses a
-        # pair when that strictly lowers the criterion -- can never leave a
+        # pair when that does not raise the criterion -- can never leave a
         # worse ``bic`` than the over-grown tree it started from.
         for x in (_two_regime(), _orbit(_rot(0.3, 0.99), [1.0, 0.0], 90)):
             selected = fsrd(x, max_depth=3)
@@ -487,6 +522,119 @@ class TestFSRDInternals:
         assert got.min() >= 0.0 and got.max() <= 1.0
         order = np.argsort(z.ravel())
         assert np.all(np.diff(got.ravel()[order]) >= -1e-12)
+
+    def test_steepness_matches_sm_s21(self):
+        # SM eq (S21): tau = 20 / (mu ||v|| ||Delta c||), with the *plain*
+        # Euclidean norm of the whole coefficient vector -- offset included --
+        # exactly as that vector reaches the sigmoid.  The coordinate medians of
+        # the reference scale the split search's bounds, not this evaluation, so
+        # nothing rescales v here; if anything did, tau would depend on how a
+        # boundary happens to be parameterised rather than on the boundary.
+        v = np.array([-0.4, 1.0, -0.5])
+        dc = np.array([0.3, -0.25])
+        mu = 0.05
+        expected = 20.0 / (mu * np.linalg.norm(v) * np.linalg.norm(dc))
+        assert_allclose(_steepness(v, dc, mu), expected, rtol=1e-14)
+        # the same boundary written with a scaled coefficient vector is a
+        # different tau -- so the value really is the norm of v as passed, and
+        # rescaling v is not a no-op the check would miss
+        assert not np.isclose(_steepness(2 * v, dc, mu), expected, rtol=1e-6)
+        # degenerate ||Delta c|| (a split with nothing on one side) must not
+        # divide by zero
+        assert np.isfinite(_steepness(v, np.zeros(2), mu))
+
+    def test_region_nrmse_matches_eq_nrmse(self):
+        # eq:NRMSE / SM eq (A-NRMSE): both terms live in the topologically
+        # transformed space, on the region's own block as fitted, and the
+        # residual is against Phi diag(b) T(omega) as the local DMD produces it
+        # -- before any inverse transform.
+        x = _oblique_corner()
+        m, t = x.shape
+        u1 = np.linspace(0, 1, m)
+        u2 = np.linspace(0, 1, t)
+        root = _Node(np.ones((m, t)), 0, [])
+        _fit_node(x, root, 1.0, 1e-4, 1e-4)
+        # a diagonal boundary, so both children are genuinely oblique
+        leaves = _try_split(x, root, np.array([-0.5, 1.0, -1.0]), 0,
+                            u1, u2, 1.0, 1e-4, 1e-4, 0.05)
+        assert leaves is not None
+        for nd in leaves:
+            block = _region_transformed_data(x, nd)
+            t0, t1 = nd.bbox[2], nd.bbox[3]
+            model = _dmd_reconstruct(nd.model, t1 - t0, 1.0)
+            expected = (np.linalg.norm(model - block)
+                        / np.linalg.norm(block - block.mean()))
+            assert_allclose(_region_nrmse(x, nd, 1.0), expected, rtol=1e-12)
+
+        # the block scored is exactly the one the operator was fitted to: the
+        # region's data through the same transform, membership *not* multiplied
+        # in (the authors' reference implementation weights only the per-region
+        # NRMSEs of `_model_wnrmse`, never the data inside one).
+        oblique = [nd for nd in leaves if nd.oblique]
+        assert oblique, 'this data must produce an oblique region'
+        for nd in oblique:
+            m0, m1, t0, t1 = nd.bbox
+            raw = _topological_transform(x[m0:m1, t0:t1], nd.spans, t1 - t0)
+            assert_allclose(_region_transformed_data(x, nd), raw, rtol=0,
+                            atol=0)
+            weighted = _topological_transform(
+                x[m0:m1, t0:t1] * nd.phi[m0:m1, t0:t1], nd.spans, t1 - t0)
+            assert not np.allclose(raw, weighted)   # the two do differ
+
+            # scoring the same model in the original space over the whole
+            # bounding box instead counts every out-of-region cell of an oblique
+            # box as pure error, which is the behaviour this replaced.  Here it
+            # is well over half again as large, so the two really are different
+            # quantities and the equality above is not vacuous.
+            dense = _inverse_topological_transform(
+                _dmd_reconstruct(nd.model, t1 - t0, 1.0), nd.spans,
+                m1 - m0, t1 - t0)
+            blk = x[m0:m1, t0:t1]
+            in_original = (np.linalg.norm(dense - blk)
+                           / np.linalg.norm(blk - blk.mean()))
+            assert in_original > 1.5 * _region_nrmse(x, nd, 1.0)
+
+    def test_delta_c_solves_its_fixed_point(self):
+        # SM eqs (S21)-(S22) are mutually recursive: tau needs ||Delta c||, and
+        # the centres Delta c separates are weighted by memberships that need
+        # tau.  The reference takes the crisp (tau -> inf) centres as an initial
+        # guess and then solves dc = DeltaCentroid(tau(dc)); the returned value
+        # must therefore satisfy that equation, which the crisp guess alone need
+        # not.
+        x = _oblique_corner()
+        m, t = x.shape
+        u1 = np.linspace(0, 1, m)
+        u2 = np.linspace(0, 1, t)
+        root = _Node(np.ones((m, t)), 0, [])
+        _fit_node(x, root, 1.0, 1e-4, 1e-4)
+        left, _ = _try_split(x, root, np.array([-0.5, 0.0, 1.0]), 0,
+                             u1, u2, 1.0, 1e-4, 1e-4, 0.05)
+
+        for node in (root, left):
+            for v in (np.array([-0.35, 0.0, 1.0]), np.array([-0.5, 1.0, 0.0]),
+                      np.array([-0.9, 1.0, 1.0])):
+                dc = _delta_c(node, v, u1, u2, 0.05)
+                image = _delta_centroid(
+                    node.phi, _sigmoid(u1, u2, v, _steepness(v, dc, 0.05)),
+                    u1, u2)
+                assert_allclose(image, dc, rtol=5e-3, atol=1e-6)
+
+        # it is a refinement of the crisp value, not a replacement: the two are
+        # close, since a large tau makes the soft centres nearly crisp
+        z = np.array([-0.25, 0.0, 1.0])
+        crisp = _delta_centroid(
+            left.phi,
+            (z[0] + z[1] * u1[:, None] + z[2] * u2[None, :] > 0).astype(float),
+            u1, u2)
+        solved = _delta_c(left, z, u1, u2, 0.05)
+        assert_allclose(np.linalg.norm(solved), np.linalg.norm(crisp),
+                        rtol=0.2)
+        assert not np.allclose(solved, crisp, rtol=1e-6, atol=1e-9)
+
+        # deterministic, and finite on a boundary that leaves one side empty
+        assert_allclose(_delta_c(left, z, u1, u2, 0.05), solved, rtol=0, atol=0)
+        assert np.all(np.isfinite(
+            _delta_c(root, np.array([5.0, 1.0, 1.0]), u1, u2, 0.05)))
 
     def test_bic_matches_sm_s37_s39(self):
         # SM eqs (S37)-(S39) with the documented dropped constant:

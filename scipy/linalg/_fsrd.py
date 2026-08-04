@@ -125,29 +125,16 @@ def _centroid(phi, u1, u2):
     return np.array([c1, c2])
 
 
-def _median_scale(phi, u1, u2):
-    """Medians of the coordinates a region actually occupies.
-
-    The split coefficients are expressed relative to these, so that a boundary's
-    orientation means the same thing wherever the region sits on the grid.
-    """
-    keep = phi > 1e-2
-    rows = np.flatnonzero(keep.any(axis=1))
-    cols = np.flatnonzero(keep.any(axis=0))
-    m1 = np.median(u1[rows]) if rows.size else 1.0
-    m2 = np.median(u2[cols]) if cols.size else 1.0
-    return (m1 if abs(m1) > _EPS else 1.0), (m2 if abs(m2) > _EPS else 1.0)
-
-
-def _steepness(v, dc, mu, scale):
+def _steepness(v, dc, mu):
     """Per-split sigmoid steepness ``tau = 20 / (mu ||v|| ||dc||)``.
 
-    The whole coefficient vector enters the norm, the offset included, with the
-    two orientation components taken relative to the region's coordinate medians
-    (`_median_scale`) -- the normalisation the split search itself works in.
+    The plain Euclidean norm of the whole coefficient vector -- offset included
+    -- exactly as that vector is handed to `_sigmoid`.  The coordinate medians
+    of [1]_ scale the *bounds* the split search works inside, not this
+    evaluation, so no rescaling enters here: were it to, ``tau`` would depend on
+    the parameterisation of a boundary rather than on the boundary itself.
     """
-    v_norm = np.array([v[0], v[1] * scale[0], v[2] * scale[1]])
-    nv = np.linalg.norm(v_norm)
+    nv = np.linalg.norm(v)
     ndc = np.linalg.norm(dc)
     denom = mu * nv * ndc
     if denom <= _EPS:
@@ -385,16 +372,29 @@ def _fit_node(a, node, dt, rcond, eta):
     node.model = _dmd_operator(block, dt, rcond)
 
 
-def _node_local_recon(node, dt, shape):
-    """Local reconstruction placed into a full ``shape`` grid (zeros outside)."""
+def _region_transformed_data(a, node):
+    """A region's own data block, in the space its local model lives in.
+
+    This is :math:`\\vartheta(\\varnothing_i(U) \\odot X_{In,i})` of [1]_ -- the
+    region's block of the data put through the same topological transform
+    `_fit_node` applied, so that it is directly comparable with the model term
+    :math:`\\Phi_i \\operatorname{diag}(b_i) T(\\omega_i)`.  It is therefore
+    exactly the matrix the local operator was fitted to.
+
+    The membership does not multiply the data here.  The notation of [1]_ reads
+    as though it does, but its authors describe that symbol as denoting no more
+    than "the local data as represented for region ``i`` in the transformed
+    space", and the reference implementation they supplied evaluates both terms
+    of the error on the unweighted block.  Weighting it would compare a model
+    fitted to the unweighted block against a tapered copy of that block, so the
+    taper itself -- not any misfit -- would enter the error, double-counting the
+    region-size penalty `_model_wnrmse` already applies.
+    """
     m0, m1, t0, t1 = node.bbox
-    q = t1 - t0
-    dense = _dmd_reconstruct(node.model, q, dt)      # (f, q)
+    block = a[m0:m1, t0:t1]
     if node.oblique:
-        dense = _inverse_topological_transform(dense, node.spans, m1 - m0, q)
-    out = np.zeros(shape, dtype=complex)
-    out[m0:m1, t0:t1] = dense
-    return out
+        block = _topological_transform(block, node.spans, t1 - t0)
+    return block
 
 
 def _leaf_blend_terms(leaf, u1, u2_out, dt, out_cols, orig_cols):
@@ -491,16 +491,31 @@ def _leaf_nrmse(a, node, dt):
 
 
 def _region_nrmse(a, node, dt):
-    """Normalised RMSE of a region's local model, over the region's own extent.
+    """Normalised RMSE of one region's local model, per eq (A-NRMSE) of [1]_.
 
-    The residual is normalised by the region's own spread about its mean, so
-    regions of different magnitude contribute comparably.
+    Both terms are evaluated in the *topologically transformed* space, on the
+    region's own block as the local operator was fitted to it
+    (`_region_transformed_data`):
+
+    - the residual is against the model term
+      :math:`\\Phi_i \\operatorname{diag}(b_i) T(\\omega_i)` exactly as the
+      local DMD produces it (`_dmd_reconstruct`), *before* any inverse
+      transform;
+    - the normalisation is that same matrix's deviation from ``mu J``, with
+      ``mu`` the scalar mean over all of its elements.
+
+    Evaluating this in the original space instead would compare the model over a
+    region's whole bounding box, counting every out-of-region cell of an oblique
+    box as pure error -- which penalises oblique boundaries by orders of
+    magnitude and so all but excludes them from the split search.  The residual
+    is normalised by the region's own spread about its mean, so regions of
+    different magnitude and extent contribute comparably.
     """
-    m0, m1, t0, t1 = node.bbox
-    block = a[m0:m1, t0:t1]
-    recon = _node_local_recon(node, dt, a.shape)[m0:m1, t0:t1]
+    q = node.bbox[3] - node.bbox[2]
+    block = _region_transformed_data(a, node)
+    model = _dmd_reconstruct(node.model, q, dt)
     scale = np.linalg.norm(block - block.mean())
-    err = np.linalg.norm(recon - block)
+    err = np.linalg.norm(model - block)
     return float(err / scale) if scale > _EPS else float(err)
 
 
@@ -617,14 +632,59 @@ def _candidate_vectors(node, u1, u2, oblique):
     return out
 
 
+_DC_ITERS = 6        # damped fixed-point sweeps allowed for ``Delta c``
+_DC_DAMP = 0.5       # damping: the map is not a contraction in general
+_DC_TOL = 1e-3       # relative step below which the iteration has converged
+
+
+def _delta_centroid(phi, om, u1, u2):
+    """Separation of the two children's activation-weighted centres.
+
+    ``om`` is the split's activation over the grid; the children's memberships
+    are ``phi * om`` and ``phi * (1 - om)``.
+    """
+    # a saturated activation times a saturated membership underflows to zero,
+    # which is the intended value
+    with np.errstate(under='ignore'):
+        return (_centroid(phi * (1.0 - om), u1, u2)
+                - _centroid(phi * om, u1, u2))
+
+
+def _delta_c(node, v, u1, u2, mu):
+    """``Delta c`` for a candidate split: the fixed point of the two definitions.
+
+    `_steepness` needs ``||Delta c||``, but the centres whose separation that is
+    are weighted by the children's memberships, which need the steepness -- S21
+    and S22 of [1]_ are mutually recursive.  [1]_ resolves it numerically: the
+    crisp (``tau -> inf``) centres give an initial guess, then a solver finds the
+    fixed point of ``dc = DeltaCentroid(tau(dc))``, keeping the crisp value if
+    the solve fails.
+
+    Here the solve is a short damped fixed-point iteration, stopped once the
+    relative step falls below ``_DC_TOL``.  It runs once per candidate split, so
+    it is deliberately cheap; a non-finite or degenerate iterate abandons it and
+    returns the crisp value, as the fallback of [1]_ does.
+    """
+    z = v[0] + v[1] * u1[:, None] + v[2] * u2[None, :]
+    dc0 = _delta_centroid(node.phi, (z > 0).astype(float), u1, u2)
+    if not np.all(np.isfinite(dc0)):
+        return dc0
+    dc = dc0
+    for _ in range(_DC_ITERS):
+        om = _sigmoid(u1, u2, v, _steepness(v, dc, mu))
+        nxt = _delta_centroid(node.phi, om, u1, u2)
+        if not np.all(np.isfinite(nxt)) or np.linalg.norm(nxt) <= _EPS:
+            return dc0            # degenerate iterate: keep the crisp value
+        step = _DC_DAMP * (nxt - dc)
+        dc = dc + step
+        if np.linalg.norm(step) <= _DC_TOL * max(np.linalg.norm(dc), _EPS):
+            break
+    return dc
+
+
 def _try_split(a, node, v, sid, u1, u2, dt, rcond, eta, mu):
     """Build the two children of ``node`` under split vector ``v``; fit them."""
-    # crisp centroids (tau -> inf) to set the steepness, then soft activation
-    z = v[0] + v[1] * u1[:, None] + v[2] * u2[None, :]
-    hard = (z > 0).astype(float) * node.phi
-    c1 = _centroid(hard, u1, u2)
-    c2 = _centroid((node.phi - hard), u1, u2)
-    tau = _steepness(v, c2 - c1, mu, _median_scale(node.phi, u1, u2))
+    tau = _steepness(v, _delta_c(node, v, u1, u2, mu), mu)
     omega = _sigmoid(u1, u2, v, tau)
     # a saturated membership times a saturated activation underflows to zero,
     # which is the intended value
@@ -706,7 +766,10 @@ def _forward_pass(a, u1, u2, dt, rcond, eta, mu, theta, max_depth, oblique):
 
 def _prune(a, leaves, u1, u2, dt, theta, rcond, eta):
     """Backward elimination: collapse sibling pairs back into their parent while
-    that strictly lowers the whole model's BIC.
+    that does not raise the whole model's BIC.
+
+    The comparison is ``<=``, not ``<``: two regions that leave the criterion
+    exactly where their parent does are not worth keeping, so a tie collapses.
 
     This pass performs the model selection, `_forward_pass` having deliberately
     over-grown the tree, as in [1]_.  It runs the tree in reverse: each
@@ -738,8 +801,10 @@ def _prune(a, leaves, u1, u2, dt, theta, rcond, eta):
             if parent.model is None:
                 continue
             others = [ln for ln in leaves if ln not in sibs]
+            # ``<=``: at equal criterion the parsimonious model wins.  Keeping
+            # the pair on a tie would carry regions that buy nothing.
             if (_model_bic(a, others + [parent], n, u1, u2, dt, theta)
-                    < _model_bic(a, others + sibs, n, u1, u2, dt, theta)):
+                    <= _model_bic(a, others + sibs, n, u1, u2, dt, theta)):
                 leaves = others + [parent]
                 changed = True
     return leaves
@@ -927,6 +992,13 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
       region reduces to a plain truncated-SVD DMD fit.
     - The explicit error model that [1]_ applies to whiten the data before
       fitting is not implemented, so noisy data is fitted as given.
+    - Each split's sigmoid steepness depends on the separation of the two
+      children's centres, which in turn depends on the steepness.  That
+      fixed point is solved for, as in [1]_, but by a short damped iteration from
+      the crisp (infinitely steep) centres to a relative tolerance of ``1e-3``,
+      rather than by a general nonlinear solver -- it is evaluated once per
+      candidate boundary.  Like [1]_, it falls back on the crisp value if the
+      iteration cannot proceed.
     - The input is used as supplied, with the singular-value cutoff applied
       relative to the largest singular value.  [1]_ instead rescales every data
       set to ``[0, 1]`` and applies `rcond` as an absolute cutoff; rescale the
@@ -941,11 +1013,12 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
     criterion; when it is the level comparison that stops the growth, the tree is
     left deliberately over-grown by one level.  The backward pass then runs the
     tree in reverse, reviewing each pair of children deepest-level first and
-    collapsing it back into its parent whenever that strictly lowers the
-    criterion, until a full sweep changes nothing.  [1]_ notes that the resulting
-    tree is not uniquely determined by this procedure.  Growth also stops at
-    ``max_depth`` or at an internal cap on the number of regions, in which case
-    the tree is not over-grown.
+    collapsing it back into its parent whenever that does not raise the
+    criterion -- a tie collapses, since regions that buy no improvement are not
+    worth keeping -- until a full sweep changes nothing.  [1]_ notes that the
+    resulting tree is not uniquely determined by this procedure.  Growth also
+    stops at ``max_depth`` or at an internal cap on the number of regions, in
+    which case the tree is not over-grown.
 
     The reconstruction and forecast use the fitted eigenvalues as returned in
     ``regions[i].eigenvalues`` (no clipping); a region's in-window
@@ -960,14 +1033,22 @@ def fsrd(a, dt=1.0, *, max_depth=3, theta=3.0, rcond=1e-4, eta=1e-4,
     decided by the weighted net error of the resulting model -- the local cost --
     while how many regions to keep is decided by the information criterion of the
     *complete* model, in the level test and in pruning.  Neither is ever taken
-    over one region in isolation.  The criterion's error term is the squared
-    error of the fully assembled reconstruction,
+    over one region in isolation.  The local cost sums each region's normalised
+    error, weighted by the share of the grid that region's membership accounts
+    for.  A region's own error is evaluated where its operator lives: in the
+    topologically transformed space, against
+    :math:`\Phi_i \operatorname{diag}(b_i) T(\omega_i)` before any inverse
+    transform, and normalised by that same block's deviation from its mean.
+    Measuring it in the original space over the region's whole bounding box
+    would instead count every out-of-region cell of an oblique box as error, and
+    so all but exclude oblique boundaries from the search.  The criterion's
+    error term is the squared error of the fully assembled reconstruction,
     :math:`\| X - \tilde{X}_{global} \|_F^2` -- a candidate set of regions is
     blended exactly as the returned ``reconstruction`` is and then compared with
     the data -- rather than anything summed from the regions' own local errors.
     The reported ``bic`` is therefore precisely the quantity both passes
     minimise, so it does order models as they do; because pruning only ever
-    collapses a pair of regions when that strictly lowers it, the selected model
+    collapses a pair of regions when that does not raise it, the selected model
     never carries a higher ``bic`` than the over-grown tree ``prune=False``
     returns.  An additive constant is dropped from it, so it remains
     incomparable to a BIC from another tool.
