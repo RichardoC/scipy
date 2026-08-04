@@ -1,0 +1,19 @@
+# Local experiment scaffolding — never commit these.
+# (gitignore has no trailing-comment syntax; keep comments on their own lines.)
+
+# CPU-only torch/transformers venv (~1.4 GB)
+.venv/
+
+# Downloaded HF weights (~1.7 GB)
+models/
+
+# Harvested activation .npy files (grows fast; GB scale)
+hidden/
+
+__pycache__/
+*.pyc
+
+# Copy of the standalone NumPy extract of the solver, taken from the fSRD
+# evaluation bundle.  Not committed because it duplicates scipy/linalg/_fsrd.py,
+# which is the real subject of this branch.  See README.md for how to obtain it.
+fsrd_standalone.py
