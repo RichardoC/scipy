@@ -76,6 +76,24 @@ def allocate_regions(sse, payload_bits, fixed_bits, budget):
     if fixed_bits + payload_bits[:, 0].sum() > budget:
         return None
 
+    if n_reg <= 8:
+        # exact: enumerate all level assignments (6^8 = 1.7M max), so the
+        # fSRD number cannot be blamed on allocator suboptimality.
+        import itertools
+        combos = np.array(list(itertools.product(range(n_lev), repeat=n_reg)),
+                          dtype=np.int8)
+        tot_sse = np.zeros(len(combos))
+        tot_pay = np.zeros(len(combos))
+        for i in range(n_reg):
+            tot_sse += sse[i, combos[:, i]]
+            tot_pay += payload_bits[i, combos[:, i]]
+        ok = fixed_bits + tot_pay <= budget
+        if not ok.any():
+            return None
+        idx = np.flatnonzero(ok)[np.argmin(tot_sse[ok])]
+        ch = combos[idx].astype(int)
+        return ch, float(tot_sse[idx]), float(fixed_bits + tot_pay[idx])
+
     def solve(lam):
         cost = sse + lam * payload_bits
         ch = cost.argmin(axis=1)

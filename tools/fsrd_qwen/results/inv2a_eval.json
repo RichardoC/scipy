@@ -1,0 +1,2503 @@
+{
+ "tensors": {
+  "blk.0.ffn_down.weight": {
+   "shape": [
+    5120,
+    17408
+   ],
+   "budget_bits": 401080320.0,
+   "budget_bpw": 4.5,
+   "b0": {
+    "rel_rmse": 0.0777900800423335,
+    "rel_frob_unweighted": 0.07897087669109863,
+    "total_bits": 401080320.0,
+    "ledger": {
+     "payload_bits": 356515840,
+     "scale_bits": 33423360,
+     "super_bits": 11141120
+    }
+   },
+   "b1": {
+    "rel_rmse": 0.08053271725371913,
+    "total_bits": 401341440.0,
+    "note": "diagnostic only; exceeds the budget by the column-perm bits (row sort is error-neutral for a within-row block codec and need not be stored)"
+   },
+   "b2": {
+    "rel_rmse": 0.05674879148117559,
+    "total_bits": 401013829.0,
+    "bpw": 4.4992539910709155,
+    "bands": [
+     [
+      0,
+      1,
+      8
+     ],
+     [
+      1,
+      25,
+      6
+     ],
+     [
+      25,
+      113,
+      5
+     ],
+     [
+      113,
+      401,
+      4
+     ],
+     [
+      401,
+      544,
+      3
+     ]
+    ],
+    "ledger": {
+     "col_perm_bits": 261120,
+     "band_count_bits": 4,
+     "band_table_bits": 65
+    }
+   },
+   "fsrd": {
+    "weighted_asc_d2": {
+     "rel_rmse": 0.1005752194430806,
+     "total_bits": 394636556.0,
+     "bpw": 4.427702914967257,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 349744128.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 394636556.0,
+      "levels": [
+       3,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       715360.0,
+       696320.0,
+       869856.0,
+       503744.0
+      ]
+     }
+    },
+    "weighted_asc_d3": {
+     "rel_rmse": 0.08260221480074047,
+     "total_bits": 393286962.0,
+     "bpw": 4.41256087808048,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 348352320.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11183200.0,
+      "region_table_bits": 402,
+      "perm_bits": 327680,
+      "total_bits": 393286962.0,
+      "levels": [
+       4,
+       4,
+       4,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       460250.0,
+       431392.0,
+       457504.0,
+       696320.0,
+       484704.0,
+       255110.0
+      ]
+     }
+    },
+    "weighted_desc_d2": {
+     "rel_rmse": 0.0998954618431231,
+     "total_bits": 395245836.0,
+     "bpw": 4.434538852467257,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 350353408.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 395245836.0,
+      "levels": [
+       5,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       503744.0,
+       869856.0,
+       715360.0,
+       696320.0
+      ]
+     }
+    },
+    "weighted_desc_d3": {
+     "rel_rmse": 0.08260221480074047,
+     "total_bits": 393286962.0,
+     "bpw": 4.41256087808048,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 348352320.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11183200.0,
+      "region_table_bits": 402,
+      "perm_bits": 327680,
+      "total_bits": 393286962.0,
+      "levels": [
+       4,
+       4,
+       3,
+       4,
+       4,
+       4
+      ],
+      "region_cells": [
+       469472.0,
+       419424.0,
+       255110.0,
+       484704.0,
+       696320.0,
+       460250.0
+      ]
+     }
+    },
+    "unweighted_asc_d2": {
+     "rel_rmse": 0.09945122284987568,
+     "total_bits": 393522444.0,
+     "bpw": 4.4152029149672565,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 348630016.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 393522444.0,
+      "levels": [
+       4,
+       4,
+       3,
+       5
+      ],
+      "region_cells": [
+       1176672.0,
+       652800.0,
+       601120.0,
+       354688.0
+      ]
+     }
+    },
+    "unweighted_asc_d3": {
+     "rel_rmse": 0.09945122284987568,
+     "total_bits": 393522444.0,
+     "bpw": 4.4152029149672565,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 348630016.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 393522444.0,
+      "levels": [
+       4,
+       4,
+       3,
+       5
+      ],
+      "region_cells": [
+       1176672.0,
+       652800.0,
+       601120.0,
+       354688.0
+      ]
+     }
+    },
+    "unweighted_desc_d2": {
+     "rel_rmse": 0.0991831089690257,
+     "total_bits": 393104652.0,
+     "bpw": 4.410515414967256,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 348212224.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 393104652.0,
+      "levels": [
+       5,
+       4,
+       3,
+       4
+      ],
+      "region_cells": [
+       354688.0,
+       639744.0,
+       614176.0,
+       1176672.0
+      ]
+     }
+    },
+    "unweighted_desc_d3": {
+     "rel_rmse": 0.0917669928136104,
+     "total_bits": 399040847.0,
+     "bpw": 4.477117729187012,
+     "n_regions": 5,
+     "ledger": {
+      "n_regions": 5,
+      "payload_bits": 354148352.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 335,
+      "perm_bits": 327680,
+      "total_bits": 399040847.0,
+      "levels": [
+       3,
+       4,
+       5,
+       4,
+       4
+      ],
+      "region_cells": [
+       428672.0,
+       773024.0,
+       354688.0,
+       639744.0,
+       589152.0
+      ]
+     }
+    }
+   },
+   "fsrd_best_cfg": "weighted_asc_d3",
+   "fsrd_best": {
+    "rel_rmse": 0.08260221480074047,
+    "total_bits": 393286962.0,
+    "bpw": 4.41256087808048,
+    "n_regions": 6,
+    "ledger": {
+     "n_regions": 6,
+     "payload_bits": 348352320.0,
+     "scale_bits": 33423360.0,
+     "super_bits": 11183200.0,
+     "region_table_bits": 402,
+     "perm_bits": 327680,
+     "total_bits": 393286962.0,
+     "levels": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      3
+     ],
+     "region_cells": [
+      460250.0,
+      431392.0,
+      457504.0,
+      696320.0,
+      484704.0,
+      255110.0
+     ]
+    }
+   },
+   "margin_vs_b0": -0.06186051943625981,
+   "margin_vs_b2": -0.455576632466981,
+   "b2_margin_vs_b0": 0.2704880692976174
+  },
+  "blk.20.ffn_down.weight": {
+   "shape": [
+    5120,
+    17408
+   ],
+   "budget_bits": 401080320.0,
+   "budget_bpw": 4.5,
+   "b0": {
+    "rel_rmse": 0.07844745077049214,
+    "rel_frob_unweighted": 0.07890923221898764,
+    "total_bits": 401080320.0,
+    "ledger": {
+     "payload_bits": 356515840,
+     "scale_bits": 33423360,
+     "super_bits": 11141120
+    }
+   },
+   "b1": {
+    "rel_rmse": 0.07888010068037458,
+    "total_bits": 401341440.0,
+    "note": "diagnostic only; exceeds the budget by the column-perm bits (row sort is error-neutral for a within-row block codec and need not be stored)"
+   },
+   "b2": {
+    "rel_rmse": 0.07790020246579339,
+    "total_bits": 400030763.0,
+    "bpw": 4.488224287594066,
+    "bands": [
+     [
+      0,
+      24,
+      5
+     ],
+     [
+      24,
+      512,
+      4
+     ],
+     [
+      512,
+      544,
+      3
+     ]
+    ],
+    "ledger": {
+     "col_perm_bits": 261120,
+     "band_count_bits": 4,
+     "band_table_bits": 39
+    }
+   },
+   "fsrd": {
+    "weighted_asc_d2": {
+     "rel_rmse": 0.10844970133265458,
+     "total_bits": 380518601.0,
+     "bpw": 4.269303725747501,
+     "n_regions": 3,
+     "ledger": {
+      "n_regions": 3,
+      "payload_bits": 335626240.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 201,
+      "perm_bits": 327680,
+      "total_bits": 380518601.0,
+      "levels": [
+       4,
+       3,
+       4
+      ],
+      "region_cells": [
+       1176672.0,
+       652800.0,
+       955808.0
+      ]
+     }
+    },
+    "weighted_asc_d3": {
+     "rel_rmse": 0.09315925070144021,
+     "total_bits": 387690764.0,
+     "bpw": 4.3497732274672565,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 342798336.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 387690764.0,
+      "levels": [
+       3,
+       4,
+       4,
+       4
+      ],
+      "region_cells": [
+       428672.0,
+       773024.0,
+       627776.0,
+       955808.0
+      ]
+     }
+    },
+    "weighted_desc_d2": {
+     "rel_rmse": 0.12263840142922226,
+     "total_bits": 369586310.0,
+     "bpw": 4.146646724027746,
+     "n_regions": 2,
+     "ledger": {
+      "n_regions": 2,
+      "payload_bits": 324694016.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 134,
+      "perm_bits": 327680,
+      "total_bits": 369586310.0,
+      "levels": [
+       3,
+       4
+      ],
+      "region_cells": [
+       994432.0,
+       1790848.0
+      ]
+     }
+    },
+    "weighted_desc_d3": {
+     "rel_rmse": 0.12263840142922226,
+     "total_bits": 369586310.0,
+     "bpw": 4.146646724027746,
+     "n_regions": 2,
+     "ledger": {
+      "n_regions": 2,
+      "payload_bits": 324694016.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 134,
+      "perm_bits": 327680,
+      "total_bits": 369586310.0,
+      "levels": [
+       3,
+       4
+      ],
+      "region_cells": [
+       994432.0,
+       1790848.0
+      ]
+     }
+    },
+    "unweighted_asc_d2": {
+     "rel_rmse": 0.09726332844568154,
+     "total_bits": 390058252.0,
+     "bpw": 4.376335727467256,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345165824.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390058252.0,
+      "levels": [
+       4,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       1176672.0,
+       652800.0,
+       601120.0,
+       354688.0
+      ]
+     }
+    },
+    "unweighted_asc_d3": {
+     "rel_rmse": 0.08938709322976227,
+     "total_bits": 399040847.0,
+     "bpw": 4.477117729187012,
+     "n_regions": 5,
+     "ledger": {
+      "n_regions": 5,
+      "payload_bits": 354148352.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 335,
+      "perm_bits": 327680,
+      "total_bits": 399040847.0,
+      "levels": [
+       3,
+       4,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       428672.0,
+       773024.0,
+       627776.0,
+       601120.0,
+       354688.0
+      ]
+     }
+    },
+    "unweighted_desc_d2": {
+     "rel_rmse": 0.09726332844568154,
+     "total_bits": 390058252.0,
+     "bpw": 4.376335727467256,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345165824.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390058252.0,
+      "levels": [
+       3,
+       4,
+       4,
+       4
+      ],
+      "region_cells": [
+       354688.0,
+       639744.0,
+       614176.0,
+       1176672.0
+      ]
+     }
+    },
+    "unweighted_desc_d3": {
+     "rel_rmse": 0.08938709322976227,
+     "total_bits": 399040847.0,
+     "bpw": 4.477117729187012,
+     "n_regions": 5,
+     "ledger": {
+      "n_regions": 5,
+      "payload_bits": 354148352.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 335,
+      "perm_bits": 327680,
+      "total_bits": 399040847.0,
+      "levels": [
+       4,
+       3,
+       5,
+       4,
+       4
+      ],
+      "region_cells": [
+       773024.0,
+       428672.0,
+       354688.0,
+       639744.0,
+       589152.0
+      ]
+     }
+    }
+   },
+   "fsrd_best_cfg": "unweighted_asc_d3",
+   "fsrd_best": {
+    "rel_rmse": 0.08938709322976227,
+    "total_bits": 399040847.0,
+    "bpw": 4.477117729187012,
+    "n_regions": 5,
+    "ledger": {
+     "n_regions": 5,
+     "payload_bits": 354148352.0,
+     "scale_bits": 33423360.0,
+     "super_bits": 11141120.0,
+     "region_table_bits": 335,
+     "perm_bits": 327680,
+     "total_bits": 399040847.0,
+     "levels": [
+      3,
+      4,
+      4,
+      4,
+      5
+     ],
+     "region_cells": [
+      428672.0,
+      773024.0,
+      627776.0,
+      601120.0,
+      354688.0
+     ]
+    }
+   },
+   "margin_vs_b0": -0.13945185409880834,
+   "margin_vs_b2": -0.14745649433983,
+   "b2_margin_vs_b0": 0.006975985826483955
+  },
+  "blk.40.ffn_down.weight": {
+   "shape": [
+    5120,
+    17408
+   ],
+   "budget_bits": 401080320.0,
+   "budget_bpw": 4.5,
+   "b0": {
+    "rel_rmse": 0.07879374061249204,
+    "rel_frob_unweighted": 0.07882529933456048,
+    "total_bits": 401080320.0,
+    "ledger": {
+     "payload_bits": 356515840,
+     "scale_bits": 33423360,
+     "super_bits": 11141120
+    }
+   },
+   "b1": {
+    "rel_rmse": 0.07894085340979137,
+    "total_bits": 401341440.0,
+    "note": "diagnostic only; exceeds the budget by the column-perm bits (row sort is error-neutral for a within-row block codec and need not be stored)"
+   },
+   "b2": {
+    "rel_rmse": 0.07882533608851892,
+    "total_bits": 400030763.0,
+    "bpw": 4.488224287594066,
+    "bands": [
+     [
+      0,
+      8,
+      5
+     ],
+     [
+      8,
+      528,
+      4
+     ],
+     [
+      528,
+      544,
+      3
+     ]
+    ],
+    "ledger": {
+     "col_perm_bits": 261120,
+     "band_count_bits": 4,
+     "band_table_bits": 39
+    }
+   },
+   "fsrd": {
+    "weighted_asc_d2": {
+     "rel_rmse": 0.09175551600115237,
+     "total_bits": 400990476.0,
+     "bpw": 4.498991977467257,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 356098048.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 400990476.0,
+      "levels": [
+       3,
+       5,
+       4,
+       4
+      ],
+      "region_cells": [
+       503744.0,
+       490688.0,
+       888352.0,
+       902496.0
+      ]
+     }
+    },
+    "weighted_asc_d3": {
+     "rel_rmse": 0.09138376303437314,
+     "total_bits": 399911247.0,
+     "bpw": 4.486883354187012,
+     "n_regions": 5,
+     "ledger": {
+      "n_regions": 5,
+      "payload_bits": 355018752.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 335,
+      "perm_bits": 327680,
+      "total_bits": 399911247.0,
+      "levels": [
+       4,
+       5,
+       3,
+       4,
+       4
+      ],
+      "region_cells": [
+       470016.0,
+       456960.0,
+       503744.0,
+       490688.0,
+       863872.0
+      ]
+     }
+    },
+    "weighted_desc_d2": {
+     "rel_rmse": 0.09565894646185479,
+     "total_bits": 385706252.0,
+     "bpw": 4.327507602467256,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 340813824.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 385706252.0,
+      "levels": [
+       4,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       926976.0,
+       863872.0,
+       503744.0,
+       490688.0
+      ]
+     }
+    },
+    "weighted_desc_d3": {
+     "rel_rmse": 0.08475618062639917,
+     "total_bits": 395689426.0,
+     "bpw": 4.439515798232135,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 350767232.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11170752.0,
+      "region_table_bits": 402,
+      "perm_bits": 327680,
+      "total_bits": 395689426.0,
+      "levels": [
+       4,
+       4,
+       3,
+       4,
+       4,
+       4
+      ],
+      "region_cells": [
+       470016.0,
+       456960.0,
+       179644.0,
+       863872.0,
+       490688.0,
+       324100.0
+      ]
+     }
+    },
+    "unweighted_asc_d2": {
+     "rel_rmse": 0.09780441621445016,
+     "total_bits": 400990476.0,
+     "bpw": 4.498991977467257,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 356098048.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 400990476.0,
+      "levels": [
+       4,
+       4,
+       3,
+       5
+      ],
+      "region_cells": [
+       926976.0,
+       863872.0,
+       503744.0,
+       490688.0
+      ]
+     }
+    },
+    "unweighted_asc_d3": {
+     "rel_rmse": 0.09044008867484903,
+     "total_bits": 401008018.0,
+     "bpw": 4.499188793406767,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 356115456.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 402,
+      "perm_bits": 327680,
+      "total_bits": 401008018.0,
+      "levels": [
+       3,
+       4,
+       4,
+       5,
+       4,
+       4
+      ],
+      "region_cells": [
+       470016.0,
+       432480.0,
+       469472.0,
+       457504.0,
+       465120.0,
+       490688.0
+      ]
+     }
+    },
+    "unweighted_desc_d2": {
+     "rel_rmse": 0.09024433878847436,
+     "total_bits": 390058252.0,
+     "bpw": 4.376335727467256,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345165824.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390058252.0,
+      "levels": [
+       4,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       926976.0,
+       863872.0,
+       639744.0,
+       354688.0
+      ]
+     }
+    },
+    "unweighted_desc_d3": {
+     "rel_rmse": 0.08628403405963891,
+     "total_bits": 393997202.0,
+     "bpw": 4.420529556274414,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 349066240.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11179520.0,
+      "region_table_bits": 402,
+      "perm_bits": 327680,
+      "total_bits": 393997202.0,
+      "levels": [
+       4,
+       4,
+       3,
+       4,
+       4,
+       4
+      ],
+      "region_cells": [
+       470016.0,
+       456960.0,
+       232800.0,
+       863872.0,
+       341632.0,
+       420000.0
+      ]
+     }
+    }
+   },
+   "fsrd_best_cfg": "weighted_desc_d3",
+   "fsrd_best": {
+    "rel_rmse": 0.08475618062639917,
+    "total_bits": 395689426.0,
+    "bpw": 4.439515798232135,
+    "n_regions": 6,
+    "ledger": {
+     "n_regions": 6,
+     "payload_bits": 350767232.0,
+     "scale_bits": 33423360.0,
+     "super_bits": 11170752.0,
+     "region_table_bits": 402,
+     "perm_bits": 327680,
+     "total_bits": 395689426.0,
+     "levels": [
+      4,
+      4,
+      3,
+      4,
+      4,
+      4
+     ],
+     "region_cells": [
+      470016.0,
+      456960.0,
+      179644.0,
+      863872.0,
+      490688.0,
+      324100.0
+     ]
+    }
+   },
+   "margin_vs_b0": -0.07567149328815881,
+   "margin_vs_b2": -0.0752403330221143,
+   "b2_margin_vs_b0": -0.00040098966975388173
+  },
+  "blk.0.ffn_gate.weight": {
+   "shape": [
+    17408,
+    5120
+   ],
+   "budget_bits": 401080320.0,
+   "budget_bpw": 4.5,
+   "b0": {
+    "rel_rmse": 0.08008799856579514,
+    "rel_frob_unweighted": 0.07868659783700806,
+    "total_bits": 401080320.0,
+    "ledger": {
+     "payload_bits": 356515840,
+     "scale_bits": 33423360,
+     "super_bits": 11141120
+    }
+   },
+   "b1": {
+    "rel_rmse": 0.07916354245420203,
+    "total_bits": 401146880.0,
+    "note": "diagnostic only; exceeds the budget by the column-perm bits (row sort is error-neutral for a within-row block codec and need not be stored)"
+   },
+   "b2": {
+    "rel_rmse": 0.076403572591781,
+    "total_bits": 396690475.0,
+    "bpw": 4.4507472655352425,
+    "bands": [
+     [
+      0,
+      8,
+      5
+     ],
+     [
+      8,
+      144,
+      4
+     ],
+     [
+      144,
+      160,
+      3
+     ]
+    ],
+    "ledger": {
+     "col_perm_bits": 66560,
+     "band_count_bits": 4,
+     "band_table_bits": 39
+    }
+   },
+   "fsrd": {
+    "weighted_asc_d2": {
+     "rel_rmse": 0.08337829497544078,
+     "total_bits": 392495372.0,
+     "bpw": 4.403679477467256,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 346488832.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 12255232.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 392495372.0,
+      "levels": [
+       5,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       348160.0,
+       644096.0,
+       1131520.0,
+       661504.0
+      ]
+     }
+    },
+    "weighted_asc_d3": {
+     "rel_rmse": 0.07861349269664719,
+     "total_bits": 400851413.0,
+     "bpw": 4.497431732626522,
+     "n_regions": 7,
+     "ledger": {
+      "n_regions": 7,
+      "payload_bits": 353730560.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 13369344.0,
+      "region_table_bits": 469,
+      "perm_bits": 327680,
+      "total_bits": 400851413.0,
+      "levels": [
+       5,
+       5,
+       4,
+       4,
+       4,
+       3,
+       4
+      ],
+      "region_cells": [
+       121856.0,
+       226304.0,
+       330752.0,
+       313344.0,
+       731136.0,
+       435200.0,
+       626688.0
+      ]
+     }
+    },
+    "weighted_desc_d2": {
+     "rel_rmse": 0.08198116734616921,
+     "total_bits": 396951820.0,
+     "bpw": 4.453679477467256,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 350945280.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 12255232.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 396951820.0,
+      "levels": [
+       3,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       661504.0,
+       1131520.0,
+       504832.0,
+       487424.0
+      ]
+     }
+    },
+    "weighted_desc_d3": {
+     "rel_rmse": 0.07685438992934221,
+     "total_bits": 400851480.0,
+     "bpw": 4.497432484346278,
+     "n_regions": 8,
+     "ledger": {
+      "n_regions": 8,
+      "payload_bits": 353730560.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 13369344.0,
+      "region_table_bits": 536,
+      "perm_bits": 327680,
+      "total_bits": 400851480.0,
+      "levels": [
+       3,
+       4,
+       4,
+       4,
+       4,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       417792.0,
+       243712.0,
+       731136.0,
+       400384.0,
+       330752.0,
+       174080.0,
+       156672.0,
+       330752.0
+      ]
+     }
+    },
+    "unweighted_asc_d2": {
+     "rel_rmse": 0.09177316251763368,
+     "total_bits": 390057228.0,
+     "bpw": 4.376324238496668,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345164800.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390057228.0,
+      "levels": [
+       3,
+       4,
+       4,
+       4
+      ],
+      "region_cells": [
+       354720.0,
+       639360.0,
+       888960.0,
+       902240.0
+      ]
+     }
+    },
+    "unweighted_asc_d3": {
+     "rel_rmse": 0.08313023579153361,
+     "total_bits": 398401461.0,
+     "bpw": 4.469944011463839,
+     "n_regions": 7,
+     "ledger": {
+      "n_regions": 7,
+      "payload_bits": 353252416.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11397536.0,
+      "region_table_bits": 469,
+      "perm_bits": 327680,
+      "total_bits": 398401461.0,
+      "levels": [
+       5,
+       4,
+       4,
+       4,
+       4,
+       3,
+       4
+      ],
+      "region_cells": [
+       126369.0,
+       330720.0,
+       571520.0,
+       330372.0,
+       600960.0,
+       228351.0,
+       596988.0
+      ]
+     }
+    },
+    "unweighted_desc_d2": {
+     "rel_rmse": 0.08337829497544078,
+     "total_bits": 392495372.0,
+     "bpw": 4.403679477467256,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 346488832.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 12255232.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 392495372.0,
+      "levels": [
+       3,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       661504.0,
+       1131520.0,
+       644096.0,
+       348160.0
+      ]
+     }
+    },
+    "unweighted_desc_d3": {
+     "rel_rmse": 0.07663884490679133,
+     "total_bits": 400851480.0,
+     "bpw": 4.497432484346278,
+     "n_regions": 8,
+     "ledger": {
+      "n_regions": 8,
+      "payload_bits": 354287616.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 12812288.0,
+      "region_table_bits": 536,
+      "perm_bits": 327680,
+      "total_bits": 400851480.0,
+      "levels": [
+       3,
+       4,
+       4,
+       4,
+       4,
+       4,
+       5,
+       5
+      ],
+      "region_cells": [
+       417792.0,
+       243712.0,
+       731136.0,
+       400384.0,
+       330752.0,
+       313344.0,
+       226304.0,
+       121856.0
+      ]
+     }
+    }
+   },
+   "fsrd_best_cfg": "unweighted_desc_d3",
+   "fsrd_best": {
+    "rel_rmse": 0.07663884490679133,
+    "total_bits": 400851480.0,
+    "bpw": 4.497432484346278,
+    "n_regions": 8,
+    "ledger": {
+     "n_regions": 8,
+     "payload_bits": 354287616.0,
+     "scale_bits": 33423360.0,
+     "super_bits": 12812288.0,
+     "region_table_bits": 536,
+     "perm_bits": 327680,
+     "total_bits": 400851480.0,
+     "levels": [
+      3,
+      4,
+      4,
+      4,
+      4,
+      4,
+      5,
+      5
+     ],
+     "region_cells": [
+      417792.0,
+      243712.0,
+      731136.0,
+      400384.0,
+      330752.0,
+      313344.0,
+      226304.0,
+      121856.0
+     ]
+    }
+   },
+   "margin_vs_b0": 0.043067047757101906,
+   "margin_vs_b2": -0.0030793365680341633,
+   "b2_margin_vs_b0": 0.04600472030759084
+  },
+  "blk.20.ffn_gate.weight": {
+   "shape": [
+    17408,
+    5120
+   ],
+   "budget_bits": 401080320.0,
+   "budget_bpw": 4.5,
+   "b0": {
+    "rel_rmse": 0.08131112686521204,
+    "rel_frob_unweighted": 0.07861856566247791,
+    "total_bits": 401080320.0,
+    "ledger": {
+     "payload_bits": 356515840,
+     "scale_bits": 33423360,
+     "super_bits": 11141120
+    }
+   },
+   "b1": {
+    "rel_rmse": 0.07993032923190971,
+    "total_bits": 401146880.0,
+    "note": "diagnostic only; exceeds the budget by the column-perm bits (row sort is error-neutral for a within-row block codec and need not be stored)"
+   },
+   "b2": {
+    "rel_rmse": 0.07664650623064102,
+    "total_bits": 398918699.0,
+    "bpw": 4.475747265535243,
+    "bands": [
+     [
+      0,
+      1,
+      6
+     ],
+     [
+      1,
+      153,
+      4
+     ],
+     [
+      153,
+      160,
+      3
+     ]
+    ],
+    "ledger": {
+     "col_perm_bits": 66560,
+     "band_count_bits": 4,
+     "band_table_bits": 39
+    }
+   },
+   "fsrd": {
+    "weighted_asc_d2": {
+     "rel_rmse": 0.09548269337981008,
+     "total_bits": 390057228.0,
+     "bpw": 4.376324238496668,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345164800.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390057228.0,
+      "levels": [
+       4,
+       3,
+       4,
+       4
+      ],
+      "region_cells": [
+       639360.0,
+       354720.0,
+       888960.0,
+       902240.0
+      ]
+     }
+    },
+    "weighted_asc_d3": {
+     "rel_rmse": 0.09168790372122745,
+     "total_bits": 400645455.0,
+     "bpw": 4.495120946098776,
+     "n_regions": 5,
+     "ledger": {
+      "n_regions": 5,
+      "payload_bits": 355752960.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 335,
+      "perm_bits": 327680,
+      "total_bits": 400645455.0,
+      "levels": [
+       4,
+       5,
+       4,
+       3,
+       4
+      ],
+      "region_cells": [
+       596480.0,
+       330880.0,
+       639360.0,
+       354720.0,
+       863840.0
+      ]
+     }
+    },
+    "weighted_desc_d2": {
+     "rel_rmse": 0.09216160862700282,
+     "total_bits": 397084844.0,
+     "bpw": 4.455171966552735,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 351635360.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11698176.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 397084844.0,
+      "levels": [
+       3,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       639939.0,
+       1153085.0,
+       504832.0,
+       487424.0
+      ]
+     }
+    },
+    "weighted_desc_d3": {
+     "rel_rmse": 0.08735449253176356,
+     "total_bits": 396951887.0,
+     "bpw": 4.453680229187012,
+     "n_regions": 5,
+     "ledger": {
+      "n_regions": 5,
+      "payload_bits": 350945280.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 12255232.0,
+      "region_table_bits": 335,
+      "perm_bits": 327680,
+      "total_bits": 396951887.0,
+      "levels": [
+       4,
+       4,
+       4,
+       3,
+       4
+      ],
+      "region_cells": [
+       639939.0,
+       1153085.0,
+       330752.0,
+       174080.0,
+       487424.0
+      ]
+     }
+    },
+    "unweighted_asc_d2": {
+     "rel_rmse": 0.09548269337981008,
+     "total_bits": 390057228.0,
+     "bpw": 4.376324238496668,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345164800.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390057228.0,
+      "levels": [
+       4,
+       3,
+       4,
+       4
+      ],
+      "region_cells": [
+       639360.0,
+       354720.0,
+       888960.0,
+       902240.0
+      ]
+     }
+    },
+    "unweighted_asc_d3": {
+     "rel_rmse": 0.09548269337981008,
+     "total_bits": 390057228.0,
+     "bpw": 4.376324238496668,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345164800.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390057228.0,
+      "levels": [
+       4,
+       3,
+       4,
+       4
+      ],
+      "region_cells": [
+       639360.0,
+       354720.0,
+       888960.0,
+       902240.0
+      ]
+     }
+    },
+    "unweighted_desc_d2": {
+     "rel_rmse": 0.09548269337981008,
+     "total_bits": 390057228.0,
+     "bpw": 4.376324238496668,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345164800.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390057228.0,
+      "levels": [
+       4,
+       4,
+       3,
+       4
+      ],
+      "region_cells": [
+       1176640.0,
+       614560.0,
+       354720.0,
+       639360.0
+      ]
+     }
+    },
+    "unweighted_desc_d3": {
+     "rel_rmse": 0.09548269337981008,
+     "total_bits": 390057228.0,
+     "bpw": 4.376324238496668,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 345164800.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 390057228.0,
+      "levels": [
+       4,
+       4,
+       3,
+       4
+      ],
+      "region_cells": [
+       1176640.0,
+       614560.0,
+       354720.0,
+       639360.0
+      ]
+     }
+    }
+   },
+   "fsrd_best_cfg": "weighted_desc_d3",
+   "fsrd_best": {
+    "rel_rmse": 0.08735449253176356,
+    "total_bits": 396951887.0,
+    "bpw": 4.453680229187012,
+    "n_regions": 5,
+    "ledger": {
+     "n_regions": 5,
+     "payload_bits": 350945280.0,
+     "scale_bits": 33423360.0,
+     "super_bits": 12255232.0,
+     "region_table_bits": 335,
+     "perm_bits": 327680,
+     "total_bits": 396951887.0,
+     "levels": [
+      4,
+      4,
+      4,
+      3,
+      4
+     ],
+     "region_cells": [
+      639939.0,
+      1153085.0,
+      330752.0,
+      174080.0,
+      487424.0
+     ]
+    }
+   },
+   "margin_vs_b0": -0.07432396892702631,
+   "margin_vs_b2": -0.13970612396735427,
+   "b2_margin_vs_b0": 0.05736755613168998
+  },
+  "blk.40.ffn_gate.weight": {
+   "shape": [
+    17408,
+    5120
+   ],
+   "budget_bits": 401080320.0,
+   "budget_bpw": 4.5,
+   "b0": {
+    "rel_rmse": 0.07931026953286889,
+    "rel_frob_unweighted": 0.07884859545812074,
+    "total_bits": 401080320.0,
+    "ledger": {
+     "payload_bits": 356515840,
+     "scale_bits": 33423360,
+     "super_bits": 11141120
+    }
+   },
+   "b1": {
+    "rel_rmse": 0.08187260333525384,
+    "total_bits": 401146880.0,
+    "note": "diagnostic only; exceeds the budget by the column-perm bits (row sort is error-neutral for a within-row block codec and need not be stored)"
+   },
+   "b2": {
+    "rel_rmse": 0.06486184405659798,
+    "total_bits": 400032811.0,
+    "bpw": 4.488247265535242,
+    "bands": [
+     [
+      0,
+      1,
+      8
+     ],
+     [
+      1,
+      153,
+      4
+     ],
+     [
+      153,
+      160,
+      3
+     ]
+    ],
+    "ledger": {
+     "col_perm_bits": 66560,
+     "band_count_bits": 4,
+     "band_table_bits": 39
+    }
+   },
+   "fsrd": {
+    "weighted_asc_d2": {
+     "rel_rmse": 0.09770325821705467,
+     "total_bits": 400973068.0,
+     "bpw": 4.498796664967257,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 356080640.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 400973068.0,
+      "levels": [
+       3,
+       4,
+       5,
+       4
+      ],
+      "region_cells": [
+       652960.0,
+       1138240.0,
+       639360.0,
+       354720.0
+      ]
+     }
+    },
+    "weighted_asc_d3": {
+     "rel_rmse": 0.08691114139092174,
+     "total_bits": 399549976.0,
+     "bpw": 4.4828300027286305,
+     "n_regions": 8,
+     "ledger": {
+      "n_regions": 8,
+      "payload_bits": 354657280.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 536,
+      "perm_bits": 327680,
+      "total_bits": 399549976.0,
+      "levels": [
+       4,
+       3,
+       4,
+       4,
+       4,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       420000.0,
+       232960.0,
+       747840.0,
+       390400.0,
+       330720.0,
+       308640.0,
+       179840.0,
+       174880.0
+      ]
+     }
+    },
+    "weighted_desc_d2": {
+     "rel_rmse": 0.08630594792164958,
+     "total_bits": 400294156.0,
+     "bpw": 4.491179477467257,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 354287616.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 12255232.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 400294156.0,
+      "levels": [
+       4,
+       3,
+       3,
+       5
+      ],
+      "region_cells": [
+       905216.0,
+       504832.0,
+       470016.0,
+       905216.0
+      ]
+     }
+    },
+    "weighted_desc_d3": {
+     "rel_rmse": 0.08617958340532242,
+     "total_bits": 398066066.0,
+     "bpw": 4.466180980906767,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 350945280.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 13369344.0,
+      "region_table_bits": 402,
+      "perm_bits": 327680,
+      "total_bits": 398066066.0,
+      "levels": [
+       4,
+       4,
+       3,
+       4,
+       4,
+       4
+      ],
+      "region_cells": [
+       330752.0,
+       574464.0,
+       174080.0,
+       330752.0,
+       470016.0,
+       905216.0
+      ]
+     }
+    },
+    "unweighted_asc_d2": {
+     "rel_rmse": 0.09699937232078298,
+     "total_bits": 396201228.0,
+     "bpw": 4.44525806202608,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 351308800.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 396201228.0,
+      "levels": [
+       3,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       652960.0,
+       1138240.0,
+       503840.0,
+       490240.0
+      ]
+     }
+    },
+    "unweighted_asc_d3": {
+     "rel_rmse": 0.09699937232078298,
+     "total_bits": 396201228.0,
+     "bpw": 4.44525806202608,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 351308800.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 396201228.0,
+      "levels": [
+       3,
+       4,
+       4,
+       5
+      ],
+      "region_cells": [
+       652960.0,
+       1138240.0,
+       503840.0,
+       490240.0
+      ]
+     }
+    },
+    "unweighted_desc_d2": {
+     "rel_rmse": 0.09686120228344725,
+     "total_bits": 396636428.0,
+     "bpw": 4.45014087452608,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 351744000.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 396636428.0,
+      "levels": [
+       5,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       503840.0,
+       490240.0,
+       1138240.0,
+       652960.0
+      ]
+     }
+    },
+    "unweighted_desc_d3": {
+     "rel_rmse": 0.09686120228344725,
+     "total_bits": 396636428.0,
+     "bpw": 4.45014087452608,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 351744000.0,
+      "scale_bits": 33423360.0,
+      "super_bits": 11141120.0,
+      "region_table_bits": 268,
+      "perm_bits": 327680,
+      "total_bits": 396636428.0,
+      "levels": [
+       5,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       503840.0,
+       490240.0,
+       1138240.0,
+       652960.0
+      ]
+     }
+    }
+   },
+   "fsrd_best_cfg": "weighted_desc_d3",
+   "fsrd_best": {
+    "rel_rmse": 0.08617958340532242,
+    "total_bits": 398066066.0,
+    "bpw": 4.466180980906767,
+    "n_regions": 6,
+    "ledger": {
+     "n_regions": 6,
+     "payload_bits": 350945280.0,
+     "scale_bits": 33423360.0,
+     "super_bits": 13369344.0,
+     "region_table_bits": 402,
+     "perm_bits": 327680,
+     "total_bits": 398066066.0,
+     "levels": [
+      4,
+      4,
+      3,
+      4,
+      4,
+      4
+     ],
+     "region_cells": [
+      330752.0,
+      574464.0,
+      174080.0,
+      330752.0,
+      470016.0,
+      905216.0
+     ]
+    }
+   },
+   "margin_vs_b0": -0.08661317018481007,
+   "margin_vs_b2": -0.32866378775976113,
+   "b2_margin_vs_b0": 0.18217597243548633
+  },
+  "blk.3.attn_q.weight": {
+   "shape": [
+    12288,
+    5120
+   ],
+   "budget_bits": 283115520.0,
+   "budget_bpw": 4.5,
+   "b0": {
+    "rel_rmse": 0.05978526947694081,
+    "rel_frob_unweighted": 0.0791258443477236,
+    "total_bits": 283115520.0,
+    "ledger": {
+     "payload_bits": 251658240,
+     "scale_bits": 23592960,
+     "super_bits": 7864320
+    }
+   },
+   "b1": {
+    "rel_rmse": 0.08528050535445512,
+    "total_bits": 283182080.0,
+    "note": "diagnostic only; exceeds the budget by the column-perm bits (row sort is error-neutral for a within-row block codec and need not be stored)"
+   },
+   "b2": {
+    "rel_rmse": 0.014879176368326386,
+    "total_bits": 282395704.0,
+    "bpw": 4.488558832804362,
+    "bands": [
+     [
+      0,
+      1,
+      8
+     ],
+     [
+      1,
+      9,
+      5
+     ],
+     [
+      9,
+      145,
+      4
+     ],
+     [
+      145,
+      160,
+      3
+     ]
+    ],
+    "ledger": {
+     "col_perm_bits": 66560,
+     "band_count_bits": 4,
+     "band_table_bits": 52
+    }
+   },
+   "fsrd": {
+    "weighted_asc_d2": {
+     "rel_rmse": 0.044635537022516096,
+     "total_bits": 282800076.0,
+     "bpw": 4.494986152648925,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 250851072.0,
+      "scale_bits": 23592960.0,
+      "super_bits": 8117184.0,
+      "region_table_bits": 268,
+      "perm_bits": 238592,
+      "total_bits": 282800076.0,
+      "levels": [
+       6,
+       5,
+       5,
+       2
+      ],
+      "region_cells": [
+       450414.0,
+       355680.0,
+       346080.0,
+       813906.0
+      ]
+     }
+    },
+    "weighted_asc_d3": {
+     "rel_rmse": 0.03186520836430799,
+     "total_bits": 276935058.0,
+     "bpw": 4.40176420211792,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 244909344.0,
+      "scale_bits": 23592960.0,
+      "super_bits": 8193760.0,
+      "region_table_bits": 402,
+      "perm_bits": 238592,
+      "total_bits": 276935058.0,
+      "levels": [
+       6,
+       6,
+       5,
+       3,
+       3,
+       3
+      ],
+      "region_cells": [
+       234088.0,
+       126711.0,
+       336390.0,
+       226016.0,
+       228969.0,
+       813906.0
+      ]
+     }
+    },
+    "weighted_desc_d2": {
+     "rel_rmse": 0.17938620466476793,
+     "total_bits": 220439619.0,
+     "bpw": 3.5037933826446532,
+     "n_regions": 1,
+     "ledger": {
+      "n_regions": 1,
+      "payload_bits": 188743680.0,
+      "scale_bits": 23592960.0,
+      "super_bits": 7864320.0,
+      "region_table_bits": 67,
+      "perm_bits": 238592,
+      "total_bits": 220439619.0,
+      "levels": [
+       3
+      ],
+      "region_cells": [
+       1966080.0
+      ]
+     }
+    },
+    "weighted_desc_d3": {
+     "rel_rmse": 0.17938620466476793,
+     "total_bits": 220439619.0,
+     "bpw": 3.5037933826446532,
+     "n_regions": 1,
+     "ledger": {
+      "n_regions": 1,
+      "payload_bits": 188743680.0,
+      "scale_bits": 23592960.0,
+      "super_bits": 7864320.0,
+      "region_table_bits": 67,
+      "perm_bits": 238592,
+      "total_bits": 220439619.0,
+      "levels": [
+       3
+      ],
+      "region_cells": [
+       1966080.0
+      ]
+     }
+    },
+    "unweighted_asc_d2": {
+     "rel_rmse": 0.08806445939791915,
+     "total_bits": 279985420.0,
+     "bpw": 4.45024840037028,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 248289280.0,
+      "scale_bits": 23592960.0,
+      "super_bits": 7864320.0,
+      "region_table_bits": 268,
+      "perm_bits": 238592,
+      "total_bits": 279985420.0,
+      "levels": [
+       3,
+       4,
+       5,
+       4
+      ],
+      "region_cells": [
+       460960.0,
+       803360.0,
+       355680.0,
+       346080.0
+      ]
+     }
+    },
+    "unweighted_asc_d3": {
+     "rel_rmse": 0.08806445939791915,
+     "total_bits": 279985420.0,
+     "bpw": 4.45024840037028,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 248289280.0,
+      "scale_bits": 23592960.0,
+      "super_bits": 7864320.0,
+      "region_table_bits": 268,
+      "perm_bits": 238592,
+      "total_bits": 279985420.0,
+      "levels": [
+       3,
+       4,
+       5,
+       4
+      ],
+      "region_cells": [
+       460960.0,
+       803360.0,
+       355680.0,
+       346080.0
+      ]
+     }
+    },
+    "unweighted_desc_d2": {
+     "rel_rmse": 0.17938620466476793,
+     "total_bits": 220439619.0,
+     "bpw": 3.5037933826446532,
+     "n_regions": 1,
+     "ledger": {
+      "n_regions": 1,
+      "payload_bits": 188743680.0,
+      "scale_bits": 23592960.0,
+      "super_bits": 7864320.0,
+      "region_table_bits": 67,
+      "perm_bits": 238592,
+      "total_bits": 220439619.0,
+      "levels": [
+       3
+      ],
+      "region_cells": [
+       1966080.0
+      ]
+     }
+    },
+    "unweighted_desc_d3": {
+     "rel_rmse": 0.17938620466476793,
+     "total_bits": 220439619.0,
+     "bpw": 3.5037933826446532,
+     "n_regions": 1,
+     "ledger": {
+      "n_regions": 1,
+      "payload_bits": 188743680.0,
+      "scale_bits": 23592960.0,
+      "super_bits": 7864320.0,
+      "region_table_bits": 67,
+      "perm_bits": 238592,
+      "total_bits": 220439619.0,
+      "levels": [
+       3
+      ],
+      "region_cells": [
+       1966080.0
+      ]
+     }
+    }
+   },
+   "fsrd_best_cfg": "weighted_asc_d3",
+   "fsrd_best": {
+    "rel_rmse": 0.03186520836430799,
+    "total_bits": 276935058.0,
+    "bpw": 4.40176420211792,
+    "n_regions": 6,
+    "ledger": {
+     "n_regions": 6,
+     "payload_bits": 244909344.0,
+     "scale_bits": 23592960.0,
+     "super_bits": 8193760.0,
+     "region_table_bits": 402,
+     "perm_bits": 238592,
+     "total_bits": 276935058.0,
+     "levels": [
+      6,
+      6,
+      5,
+      3,
+      3,
+      3
+     ],
+     "region_cells": [
+      234088.0,
+      126711.0,
+      336390.0,
+      226016.0,
+      228969.0,
+      813906.0
+     ]
+    }
+   },
+   "margin_vs_b0": 0.46700569148394644,
+   "margin_vs_b2": -1.1415975975753692,
+   "b2_margin_vs_b0": 0.7511230358497374
+  },
+  "blk.1.attn_qkv.weight": {
+   "shape": [
+    10240,
+    5120
+   ],
+   "budget_bits": 235929600.0,
+   "budget_bpw": 4.5,
+   "b0": {
+    "rel_rmse": 0.13033071487486383,
+    "rel_frob_unweighted": 0.07907586891544283,
+    "total_bits": 235929600.0,
+    "ledger": {
+     "payload_bits": 209715200,
+     "scale_bits": 19660800,
+     "super_bits": 6553600
+    }
+   },
+   "b1": {
+    "rel_rmse": 0.14703450720221653,
+    "total_bits": 235996160.0,
+    "note": "diagnostic only; exceeds the budget by the column-perm bits (row sort is error-neutral for a within-row block codec and need not be stored)"
+   },
+   "b2": {
+    "rel_rmse": 0.047030177288836184,
+    "total_bits": 235340869.0,
+    "bpw": 4.4887708473205565,
+    "bands": [
+     [
+      0,
+      1,
+      8
+     ],
+     [
+      1,
+      4,
+      6
+     ],
+     [
+      4,
+      12,
+      5
+     ],
+     [
+      12,
+      138,
+      4
+     ],
+     [
+      138,
+      160,
+      3
+     ]
+    ],
+    "ledger": {
+     "col_perm_bits": 66560,
+     "band_count_bits": 4,
+     "band_table_bits": 65
+    }
+   },
+   "fsrd": {
+    "weighted_asc_d2": {
+     "rel_rmse": 0.06927507572235175,
+     "total_bits": 233934028.0,
+     "bpw": 4.4619374847412105,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 207064800.0,
+      "scale_bits": 19660800.0,
+      "super_bits": 6998240.0,
+      "region_table_bits": 268,
+      "perm_bits": 209920,
+      "total_bits": 233934028.0,
+      "levels": [
+       6,
+       3,
+       4,
+       3
+      ],
+      "region_cells": [
+       419840.0,
+       402290.0,
+       296055.0,
+       520215.0
+      ]
+     }
+    },
+    "weighted_asc_d3": {
+     "rel_rmse": 0.0576518445817863,
+     "total_bits": 234894002.0,
+     "bpw": 4.480247535705566,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 207813920.0,
+      "scale_bits": 19660800.0,
+      "super_bits": 7208960.0,
+      "region_table_bits": 402,
+      "perm_bits": 209920,
+      "total_bits": 234894002.0,
+      "levels": [
+       8,
+       4,
+       3,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       153600.0,
+       256000.0,
+       153600.0,
+       266240.0,
+       288745.0,
+       520215.0
+      ]
+     }
+    },
+    "weighted_desc_d2": {
+     "rel_rmse": 0.3154582343160339,
+     "total_bits": 183710787.0,
+     "bpw": 3.504005184173584,
+     "n_regions": 1,
+     "ledger": {
+      "n_regions": 1,
+      "payload_bits": 157286400.0,
+      "scale_bits": 19660800.0,
+      "super_bits": 6553600.0,
+      "region_table_bits": 67,
+      "perm_bits": 209920,
+      "total_bits": 183710787.0,
+      "levels": [
+       3
+      ],
+      "region_cells": [
+       1638400.0
+      ]
+     }
+    },
+    "weighted_desc_d3": {
+     "rel_rmse": 0.3154582343160339,
+     "total_bits": 183710787.0,
+     "bpw": 3.504005184173584,
+     "n_regions": 1,
+     "ledger": {
+      "n_regions": 1,
+      "payload_bits": 157286400.0,
+      "scale_bits": 19660800.0,
+      "super_bits": 6553600.0,
+      "region_table_bits": 67,
+      "perm_bits": 209920,
+      "total_bits": 183710787.0,
+      "levels": [
+       3
+      ],
+      "region_cells": [
+       1638400.0
+      ]
+     }
+    },
+    "unweighted_asc_d2": {
+     "rel_rmse": 0.06927507572235175,
+     "total_bits": 233934028.0,
+     "bpw": 4.4619374847412105,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 207064800.0,
+      "scale_bits": 19660800.0,
+      "super_bits": 6998240.0,
+      "region_table_bits": 268,
+      "perm_bits": 209920,
+      "total_bits": 233934028.0,
+      "levels": [
+       6,
+       3,
+       4,
+       3
+      ],
+      "region_cells": [
+       419840.0,
+       402290.0,
+       296055.0,
+       520215.0
+      ]
+     }
+    },
+    "unweighted_asc_d3": {
+     "rel_rmse": 0.0576518445817863,
+     "total_bits": 234894002.0,
+     "bpw": 4.480247535705566,
+     "n_regions": 6,
+     "ledger": {
+      "n_regions": 6,
+      "payload_bits": 207813920.0,
+      "scale_bits": 19660800.0,
+      "super_bits": 7208960.0,
+      "region_table_bits": 402,
+      "perm_bits": 209920,
+      "total_bits": 234894002.0,
+      "levels": [
+       8,
+       4,
+       3,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       153600.0,
+       256000.0,
+       153600.0,
+       266240.0,
+       288745.0,
+       520215.0
+      ]
+     }
+    },
+    "unweighted_desc_d2": {
+     "rel_rmse": 0.15869814896091014,
+     "total_bits": 232514828.0,
+     "bpw": 4.4348683929443355,
+     "n_regions": 4,
+     "ledger": {
+      "n_regions": 4,
+      "payload_bits": 206090240.0,
+      "scale_bits": 19660800.0,
+      "super_bits": 6553600.0,
+      "region_table_bits": 268,
+      "perm_bits": 209920,
+      "total_bits": 232514828.0,
+      "levels": [
+       5,
+       4,
+       4,
+       3
+      ],
+      "region_cells": [
+       296320.0,
+       511520.0,
+       420960.0,
+       409600.0
+      ]
+     }
+    },
+    "unweighted_desc_d3": {
+     "rel_rmse": 0.15869814896091014,
+     "total_bits": 232514895.0,
+     "bpw": 4.43486967086792,
+     "n_regions": 5,
+     "ledger": {
+      "n_regions": 5,
+      "payload_bits": 206090240.0,
+      "scale_bits": 19660800.0,
+      "super_bits": 6553600.0,
+      "region_table_bits": 335,
+      "perm_bits": 209920,
+      "total_bits": 232514895.0,
+      "levels": [
+       4,
+       4,
+       5,
+       4,
+       3
+      ],
+      "region_cells": [
+       213280.0,
+       207680.0,
+       296320.0,
+       511520.0,
+       409600.0
+      ]
+     }
+    }
+   },
+   "fsrd_best_cfg": "weighted_asc_d3",
+   "fsrd_best": {
+    "rel_rmse": 0.0576518445817863,
+    "total_bits": 234894002.0,
+    "bpw": 4.480247535705566,
+    "n_regions": 6,
+    "ledger": {
+     "n_regions": 6,
+     "payload_bits": 207813920.0,
+     "scale_bits": 19660800.0,
+     "super_bits": 7208960.0,
+     "region_table_bits": 402,
+     "perm_bits": 209920,
+     "total_bits": 234894002.0,
+     "levels": [
+      8,
+      4,
+      3,
+      4,
+      4,
+      3
+     ],
+     "region_cells": [
+      153600.0,
+      256000.0,
+      153600.0,
+      266240.0,
+      288745.0,
+      520215.0
+     ]
+    }
+   },
+   "margin_vs_b0": 0.5576495944402642,
+   "margin_vs_b2": -0.22584791096399814,
+   "b2_margin_vs_b0": 0.6391474002579369
+  }
+ },
+ "gates": {
+  "pass_wins_over_b0_and_b2": 0,
+  "b0_margin>=10pct_count": 2,
+  "bic_1region_bestcfg_count": 0,
+  "bic_1region_allcfg_count": 0,
+  "median_margin_vs_b0": -0.06809224418164306,
+  "median_margin_vs_b2": -0.18665220265191407,
+  "median_b2_margin_vs_b0": 0.11977176428358816,
+  "verdict": "FAIL"
+ }
+}
