@@ -1,0 +1,81 @@
+{
+ "config": {
+  "n_streams": 2,
+  "prefill": 256,
+  "cont": 256,
+  "loop_len": 1024,
+  "chunk": 64,
+  "ranks_rest": [
+   8,
+   16,
+   32
+  ],
+  "ranks_loop": [
+   16,
+   32,
+   64
+  ],
+  "protocol": "teacher-forced, greedy-free (no sampling), fp32 CPU; untouched and truncated runs consume identical tokens"
+ },
+ "at_rest": {
+  "8": {
+   "rank": 8,
+   "n_lin_layers": 18,
+   "mean_kl_nats": 0.010189696331508458,
+   "top1_agree": 0.95703125,
+   "n_positions": 512,
+   "seconds": 11.2
+  },
+  "16": {
+   "rank": 16,
+   "n_lin_layers": 18,
+   "mean_kl_nats": 0.0036601338360924274,
+   "top1_agree": 0.974609375,
+   "n_positions": 512,
+   "seconds": 11.3
+  },
+  "32": {
+   "rank": 32,
+   "n_lin_layers": 18,
+   "mean_kl_nats": 0.0006429340646718629,
+   "top1_agree": 0.984375,
+   "n_positions": 512,
+   "seconds": 12.4
+  }
+ },
+ "in_loop": {
+  "untouched": {
+   "nll": 3.01367847258744,
+   "ppl": 20.362163994221795
+  },
+  "16": {
+   "rank": 16,
+   "nll": 3.020145067371581,
+   "ppl": 20.49426451764322,
+   "rel_ppl_increase": 0.006487548349915606,
+   "seconds": 37.2
+  },
+  "32": {
+   "rank": 32,
+   "nll": 3.0128127875449255,
+   "ppl": 20.344544401028273,
+   "rel_ppl_increase": -0.0008653104453202332,
+   "seconds": 38.6
+  },
+  "64": {
+   "rank": 64,
+   "nll": 3.014938026928832,
+   "ppl": 20.38782740511829,
+   "rel_ppl_increase": 0.0012603479131088058,
+   "seconds": 40.2
+  }
+ },
+ "gates": {
+  "at_rest_rank16_kl<=0.05": true,
+  "at_rest_rank16_top1>=0.95": true,
+  "kill_rank32_kl>0.2": false,
+  "in_loop_rank32_ppl<=2pct": true,
+  "in_loop_rank64_ppl>5pct_dead": false
+ },
+ "wall_seconds": 185.0
+}

@@ -1,0 +1,80 @@
+{
+ "targets": [
+  "blk.0.ffn_down.weight",
+  "blk.20.ffn_down.weight",
+  "blk.40.ffn_down.weight",
+  "blk.0.ffn_gate.weight",
+  "blk.20.ffn_gate.weight",
+  "blk.40.ffn_gate.weight",
+  "blk.3.attn_q.weight",
+  "blk.1.attn_qkv.weight"
+ ],
+ "tensors": {
+  "blk.0.ffn_down.weight": {
+   "np_shape": [
+    5120,
+    17408
+   ],
+   "bytes": 178257920,
+   "fetch_s": 12.9,
+   "df_after_gb": 16.4
+  },
+  "blk.20.ffn_down.weight": {
+   "np_shape": [
+    5120,
+    17408
+   ],
+   "bytes": 178257920,
+   "fetch_s": 6.6,
+   "df_after_gb": 16.3
+  },
+  "blk.40.ffn_down.weight": {
+   "np_shape": [
+    5120,
+    17408
+   ],
+   "bytes": 178257920,
+   "fetch_s": 7.7,
+   "df_after_gb": 16.1
+  },
+  "blk.0.ffn_gate.weight": {
+   "np_shape": [
+    17408,
+    5120
+   ],
+   "bytes": 178257920,
+   "fetch_s": 6.3,
+   "df_after_gb": 15.9
+  },
+  "blk.20.ffn_gate.weight": {
+   "np_shape": [
+    17408,
+    5120
+   ],
+   "bytes": 178257920,
+   "fetch_s": 8.1,
+   "df_after_gb": 15.8
+  },
+  "blk.40.ffn_gate.weight": {
+   "np_shape": [
+    17408,
+    5120
+   ],
+   "bytes": 178257920,
+   "fetch_s": 7.0,
+   "df_after_gb": 15.6
+  },
+  "blk.1.attn_qkv.weight": {
+   "np_shape": [
+    10240,
+    5120
+   ],
+   "bytes": 104857600,
+   "fetch_s": 3.9,
+   "df_after_gb": 15.5
+  }
+ },
+ "df_start_gb": 16.606414794921875,
+ "total_bytes": 1174405120,
+ "df_end_gb": 15.5
+}
