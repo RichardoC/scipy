@@ -27,9 +27,11 @@ import os
 import time
 import warnings
 
-import numpy as np
-
+# Must precede the numpy import (single-threaded BLAS in forked workers).
 os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
+import numpy as np
 
 from exp_common import HERE, load_harvest, rel_err
 

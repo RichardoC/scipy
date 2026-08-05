@@ -34,9 +34,13 @@ import os
 import time
 import warnings
 
-import numpy as np
-
+# Must precede the numpy import: OpenBLAS reads the thread count at load time,
+# and multi-threaded BLAS in 4 forked workers on 4 cores spin-waits itself into
+# a ~10x slowdown on these tiny (1024 x 24) SVDs.
 os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
+import numpy as np
 
 from exp_common import (HERE, depth_matrix, fsrd_col_boundaries, load_harvest,
                         rel_err, row_standardize, sample_pairs)
