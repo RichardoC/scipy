@@ -197,4 +197,207 @@ trajectory is extremely accurate and costs no metadata at all.
 
 ## 3. Results
 
-(appended after the fact)
+(appended after the fact — see §4 below)
+
+---
+
+# 4. RESULTS
+
+Scripts: `pilot_ckpt_train.py` (training + fp32 checkpoint memmap),
+`pilot_ckpt_eval.py` (basis, fSRD fits, baselines, ledger, dloss),
+`pilot_ckpt_control.py` (positive control). Raw numbers:
+`pilot_ckpt_results_seed{0,1}.json`, `pilot_ckpt_control.json`.
+
+## 4.0 Notes on the design (implementation decisions forced by gaps; no
+pre-registered threshold, margin, metric or split rule was changed)
+
+- **The four byte budgets.** §1 references "the 4 byte budgets tested" but §0
+  never names their generator. Budgets are defined as fSRD's own achieved
+  byte totals at `rcond ∈ {1e-1, 1e-2, 1e-3, 1e-4}` (rcond is the only
+  rank/size knob the solver exposes; `max_depth=3` per §1's G0), fixed before
+  any fit was run. Comparators are sized into each budget by §0.3's floor rule.
+- **Held-out decompression of the SVD-family arms.** §0 does not state how
+  `svd`/`useg`/`sub` produce a column at fit-index i+0.5 from their stored
+  bytes. All three use linear interpolation of their stored/reconstructed
+  columns (midpoint average of columns i and i+1) — the natural full-strength
+  decompressor; `sub` interpolates between its two nearest kept checkpoints.
+  `fsrd`/`gdmd` evaluate the fitted Vandermonde at i+0.5 as §0.2(5) requires.
+- **`sub` in coefficient space.** `sub` errors are computed in coefficient
+  space + out-of-span residual, neglecting interpolation of the basis's own
+  fit-residual (bounded by the reported SVD truncation residual, ~1e-7
+  relative — nil).
+- **Blend verification against a re-fit.** The fit pipeline is deterministic
+  for a fixed input buffer, but two `fsrd()` calls on separately allocated
+  copies of the same matrix can diverge on a near-tie split (BLAS
+  kernel/alignment rounding), which changes the tree, not the blend. The
+  binding §0.2(5) check is therefore asserted against the library's own
+  `_reconstruct` applied to the *same* fitted leaves that are evaluated (that
+  is `res.reconstruction` of the evaluated model, bit-for-bit); the diff
+  against an independent public `fsrd()` re-fit is recorded as a diagnostic
+  (`public_refit_recon_maxdiff`).
+- **8 dloss checkpoints.** Held-out ordinals j ∈ {9, 32, 55, 78, 101, 124,
+  147, 170} (training steps 4j+2 = 38, 130, 222, 314, 406, 498, 590, 682):
+  uniform spread, step 38 < 40 (before warmup end), steps 406+ after the LR
+  drop. Fixed before any fit.
+- **naive bytes** = 349·P·4 (175 fit + 174 held-out columns actually
+  represented; the 350th stored column is dropped by §0.1's split rule).
+- **Objection recorded (design not changed):** under §0.3 every mode of every
+  region is charged P floats, so fSRD's byte total is ≈ (Σ region ranks)·P·4
+  and the temporal-coefficient savings DMD offers over SVD (4r floats vs
+  R·N_fit) is ~0.07 % of a budget at P=4.8e5. fSRD can therefore only win
+  via *better interpolation per stored P-vector*, not via its coefficient
+  economy. This is a fair reading of the ledger, but it makes G1's 30 %
+  margin very demanding a priori.
+
+## 4.1 Positive control — planted piecewise-linear regimes: **DETECTED**
+
+Synthetic trajectory, same shape (350 × 4.7e5, fp32): 3 regimes, each a
+12-dim rotation/decay system in its own disjoint 12-dim subspace (global
+rank exactly 36), switches planted at stored positions 111 and 236 =
+fit-units 55.5 and 118.0 (off fSRD's split lattice); rotation rates kept
+below fit-grid Nyquist. Pipeline identical to the real run; dloss does not
+apply (synthetic parameters are not a network).
+
+- Basis: K = 36 recovered exactly; ‖UᵀU−I‖_F = 1.6e-15 (after one Cholesky
+  re-orthonormalisation; 3.9e-11 before); SVD truncation residual 2.8e-7.
+- Blend verification: max abs discrepancy **0.0** at all four budgets.
+- Regions: 4–5 per fit, splits 13/14 temporal. Planted switch 55.5 found at
+  57/60/57/59 (within 1.5–4.5 fit-units) in 4/4 fits; switch 118.0 found at
+  112/116/112 (within 2–6) in 3/4 fits (worst fit: 98, off 20).
+- Held-out error at matched bytes (frob_rel_c, median over 174 columns):
+  fSRD **0.0011–0.052** vs global SVD 0.025, useg 0.025–0.10, sub
+  0.12–0.35, gdmd 0.53–0.75. fSRD beats the Frobenius-optimal global SVD by
+  8–22× in the median at 3 of 4 budgets (means: fsrd 0.037–0.088 vs svd
+  0.051 — the mean is dominated by the fuzzy-boundary columns, where the
+  blend of two regimes is soft; fSRD's mean still beats svd at 3/4 budgets).
+
+The protocol detects planted structure: a null on the real data is
+therefore attributable to the data, not the pipeline.
+
+## 4.2 Real data — setup and mandatory checks
+
+Training (`pilot_ckpt_train.py`, seeds 0 and 1): P = 480 000, loss
+5.24→2.11 / 5.19→2.10, ~44 s/seed; 350 fp32 checkpoints = 672 MB/seed,
+deleted after evaluation. naive = 349·P·4 = 670 080 000 B.
+
+| check (per §0.2 / task) | seed 0 | seed 1 |
+|---|---|---|
+| K (all σ/σ₀ > 1e-7 kept) | 174 | 174 |
+| ‖UᵀU−I‖_F (after 1 Cholesky pass; before) | 4.7e-15 (2.6e-9) | 4.8e-15 (2.4e-9) |
+| SVD truncation residual ‖A_c−UC‖/‖A_c‖ | 1.1e-15 | 9.7e-16 |
+| blend verification, max abs diff, worst of 4 fits (recon scale ≈ 26) | 6.7e-15 | 1.95e-14 |
+| independent public `fsrd()` re-fit recon maxdiff | 0.0 (all 4) | 0.0 (all 4) |
+| unpaired complex modes (charged double) | 0 | 0 |
+| held-out columns in any fit | none (asserted) | none (asserted) |
+
+The four budgets (fSRD achieved bytes; ratio vs naive):
+
+| budget | seed 0 | seed 1 |
+|---|---|---|
+| B1 (rcond 1e-1) | 38.4 MB (17.4×), 6 regions, ranks [7,4,2,2,2,2] | 40.3 MB (16.6×), 8 regions, ranks [1,1,1,2,7,4,2,2] |
+| B2 (rcond 1e-2) | 188.2 MB (3.56×), 8 regions | 307.2 MB (2.18×), 8 regions |
+| B3 (rcond 1e-3) | 345.6 MB (1.94×), 3 regions | 330.2 MB (2.03×), 3 regions |
+| B4 (rcond 1e-4) | 334.1 MB (2.01×), **1 region** | 334.1 MB (2.01×), **1 region** |
+
+All splits axis-aligned; 12/14 (seed 0) and 13/16 (seed 1) of unique splits
+temporal. B1 boundaries (steps): seed 0 = 44, 124, 240, 340, 464; seed 1 =
+44, 124, 240, 340, 492, 568, 632 — again within a few steps of the warmup
+end (40) and LR drop (350), duplicating the loss curve as in the sibling
+pilot. In-window relative error of the fits: 0.017–0.091 (cf. 5.1e-4 on the
+256-dim sketch in the sibling pilot; the full-P coefficient trajectory is a
+much harder object).
+
+**Degeneracy of the metric regime, stated before the gate table.** Every
+arm's mean `dloss` is *negative* at every budget on both seeds (except
+gdmd): reconstructed checkpoints have *lower* validation loss than the true
+checkpoints, because low-rank/averaged reconstructions denoise SGD noise —
+indeed μ alone (the mean fit checkpoint) scores mean dloss −0.038 / −0.034,
+better than every arm at every budget. The pre-registered ratio gates were
+written for positive "excess loss"; with negative D they are applied
+literally as inequalities, and G1 in particular can "pass" at a budget
+where fSRD is numerically *worse* than SVD (seed 0, B2). Flagged here,
+gates unchanged.
+
+Also: at B3/B4 (and seed 1 B2) the budget exceeds the cost of storing all
+K=174 coefficients, so svd/useg/sub saturate (lossless on fit columns,
+midpoint-interpolation error only, identical dloss −0.00584 / −0.00783);
+fSRD at those budgets still carries 1.7–3.7 % in-window error.
+
+## 4.3 Gate table (mean dloss over the 8 held-out checkpoints, nats)
+
+Seed 0:
+
+| budget (ratio) | fsrd | svd | useg | sub | gdmd | G1 (≤0.7·svd) | G2 (≤0.8·useg) | G3 (≤0.8·sub) |
+|---|---|---|---|---|---|---|---|---|
+| B1 (17.4×) | **−0.01553** | −0.01375 | **−0.02261** | −0.01038 | +0.04810 | pass | FAIL | pass |
+| B2 (3.6×) | −0.00555 | **−0.00627** | −0.00572 | **−0.00764** | +0.06838 | pass | pass | FAIL |
+| B3 (1.9×) | **−0.00643** | −0.00584 | −0.00584 | −0.00584 | +0.00924 | pass | pass | pass |
+| B4 (2.0×) | −0.00059 | **−0.00584** | −0.00584 | −0.00584 | −0.00059 | FAIL | FAIL | FAIL |
+
+Seed 1:
+
+| budget (ratio) | fsrd | svd | useg | sub | gdmd | G1 | G2 | G3 |
+|---|---|---|---|---|---|---|---|---|
+| B1 (16.6×) | −0.01704 | −0.01627 | **−0.02751** | −0.01078 | +0.04671 | pass | FAIL | pass |
+| B2 (2.2×) | **−0.00868** | −0.00783 | −0.00787 | −0.00783 | +0.06305 | pass | pass | pass |
+| B3 (2.0×) | **−0.01107** | −0.00783 | −0.00782 | −0.00783 | +0.02026 | pass | pass | pass |
+| B4 (2.0×) | −0.00304 | **−0.00783** | −0.00783 | −0.00783 | −0.00304 | FAIL | FAIL | FAIL |
+
+(Medians in the JSONs; same picture. gdmd = global DMD, max_depth=0, at
+its own achieved bytes: 11.5–334 MB.)
+
+Gate verdicts (a gate passes only if it passes at ≥3 of 4 budgets on BOTH
+seeds):
+
+- **G0 (degeneracy auto-fail): PASS** — n_regions == 1 on 2 of 8
+  max_depth=3 fits (both B4), not more than half.
+- **G1 (vs global SVD): PASS — but only via the sign degeneracy.**
+  3/4 budgets on each seed satisfy the literal inequality. Note: at seed 0
+  B2 fSRD is *worse* than SVD (−0.00555 vs −0.00627) yet the inequality
+  −0.00555 ≤ 0.7·(−0.00627) holds; with positive excess losses this gate
+  would not be meaningful here.
+- **G2 (vs uniform-boundary segmentation): FAIL** — 2/4 budgets on both
+  seeds. At the only ≥4× budget (B1), useg beats fSRD outright on both
+  seeds (−0.0226 vs −0.0155; −0.0275 vs −0.0170) and is the best arm
+  overall: *uniform* boundaries with per-segment SVD beat fSRD's adaptive
+  placement.
+- **G3 (vs subsampling+linear interpolation): FAIL** — 3/4 on seed 1 but
+  2/4 on seed 0 (sub beats fSRD at seed 0 B2: −0.00764 vs −0.00555).
+- **G4 (usefulness floor): PASS** — at B1 (ratio ≥ 4× on both seeds), mean
+  dloss −0.0155 / −0.0170 ≤ 0.05 nats. (Trivially satisfied in the
+  negative-dloss regime; even μ alone would pass it.)
+- **Explicit NO-GO clause: FIRES on seed 0** — `D_svd ≤ D_fsrd` at 2 of 4
+  budgets (B2, B4) and `D_sub ≤ D_fsrd` at 2 of 4 (B2, B4), strict
+  inequality, no tolerance needed.
+
+Secondary Frobenius metrics (registered): raw `frob_rel` is 5e-4–9e-3 for
+every arm at every budget — it discriminates poorly, exactly as §0.4
+predicted. On `frob_rel_c` (median): fSRD loses to matched-bytes global
+SVD at B2–B4 on both seeds (up to 7×: 0.0211 vs 0.0029 at seed 1 B2) and
+roughly ties at B1 (0.064 vs 0.062; 0.071 vs 0.062); useg and sub are
+also ahead of fSRD nearly everywhere. gdmd is far behind everyone
+(frob_rel_c median up to 0.99) — the regions genuinely help over a global
+operator, as in the sibling pilot, and still lose to classical baselines.
+
+## 4.4 VERDICT: **NO-GO**
+
+Applying §1's verdict rule literally:
+
+- GO requires G1∧G2∧G3∧G4: **no** (G2, G3 fail).
+- PARTIAL requires G0∧G1∧G3 with G2 failing: **no** (G3 fails on seed 0).
+- NO-GO: the explicit clause (`D_svd ≤ D_fsrd` or `D_sub ≤ D_fsrd` at ≥2 of
+  4 budgets) fires on seed 0; a positive result was required to survive
+  both seeds. **NO-GO.**
+
+Deciding facts: (1) at the only byte budget with a ≥4× storage ratio,
+plain uniform-boundary per-segment SVD is the best method and fSRD's
+adaptive boundary placement subtracts value — "segmentation helps; fSRD's
+placement is ceremony" describes B1, though the pre-registered PARTIAL
+verdict is unavailable because G3 also fails; (2) at the three finer
+budgets fSRD's byte total buys the comparators effectively lossless
+storage of the fit columns, so it cannot win there except through the
+denoising accident; (3) the dloss metric itself collapsed into a
+denoising contest (all arms negative, μ alone best of all), which no
+method "wins" in the pre-registered sense. The eighth application of this
+solver in this project falls to the same pattern as the previous seven:
+the cheap classical baseline wins wherever it exists.

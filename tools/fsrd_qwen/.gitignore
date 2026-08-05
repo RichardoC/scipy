@@ -32,3 +32,4 @@ fsrd_standalone.py
 pilot_train_data/
 pilot_rep_data/
 pilot_layer_data/
+pilot_ckpt_data/
