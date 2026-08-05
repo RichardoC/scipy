@@ -1,0 +1,26 @@
+{
+ "blk.0.ffn_down.weight": {
+  "shape": [
+   5120,
+   17408
+  ],
+  "n_weights": 89128960,
+  "b0_rel_rmse_weighted": 0.0777900800423335,
+  "b0_rel_frob_unweighted": 0.07897087669109863,
+  "b1_rel_rmse_weighted": 0.08053271725371913,
+  "denom": 0.5974810488523222,
+  "seconds": 68.2
+ },
+ "blk.20.ffn_down.weight": {
+  "shape": [
+   5120,
+   17408
+  ],
+  "n_weights": 89128960,
+  "b0_rel_rmse_weighted": 0.07844745077049214,
+  "b0_rel_frob_unweighted": 0.07890923221898764,
+  "b1_rel_rmse_weighted": 0.07888010068037458,
+  "denom": 63.808370272482435,
+  "seconds": 49.8
+ }
+}

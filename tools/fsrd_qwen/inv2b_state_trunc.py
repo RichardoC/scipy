@@ -48,6 +48,8 @@ SCRATCH = os.environ.get(
     "/tmp/claude-0/-home-user-scipy/8ec6b2c3-62da-55ca-a96d-bd9df70737b7/scratchpad",
 )
 N_STREAMS = int(os.environ.get("INV2B_NSTREAMS", "20"))
+PARTS = set(os.environ.get("INV2B_PARTS", "1,2").split(","))
+OUT_SUFFIX = os.environ.get("INV2B_SUFFIX", "")
 PREFILL, CONT = 256, 256          # part 1
 LOOP_LEN, CHUNK = 1024, 64        # part 2
 RANKS_REST = [8, 16, 32]
@@ -184,6 +186,23 @@ def main():
     log(f"streams: {tuple(streams.shape)}")
 
     # ---------------- Part 1: at-rest one-shot truncation -----------------
+    results["at_rest"] = {}
+    if "1" not in PARTS:
+        log("part1 skipped (INV2B_PARTS)")
+    else:
+        run_part1(model, streams, vocab, results)
+
+    # ---------------- Part 2: in-loop periodic re-truncation --------------
+    if "2" not in PARTS:
+        log("part2 skipped (INV2B_PARTS)")
+    else:
+        run_part2(model, streams, results)
+
+    finish(results, t_start)
+    return 0
+
+
+def run_part1(model, streams, vocab, results):
     ids_pre = streams[:, :PREFILL]
     ids_cont = streams[:, PREFILL:PREFILL + CONT]
     os.makedirs(SCRATCH, exist_ok=True)
@@ -198,8 +217,6 @@ def main():
     continue_chunks(model, past, ids_cont, p_memmap, p_argmax, store=True)
     p_memmap.flush()
     log(f"  reference done in {time.time()-t0:.0f}s")
-
-    results["at_rest"] = {}
     # r=None: determinism control -- fresh prefill, NO truncation, same compare
     # path; must give KL ~ 0 and top-1 ~ 1.0, proving the KL below measures
     # truncation only (binding rule: identical protocol/no sampling).
@@ -222,7 +239,8 @@ def main():
     del p_memmap
     os.remove(pm_path)
 
-    # ---------------- Part 2: in-loop periodic re-truncation --------------
+
+def run_part2(model, streams, results):
     log("part2: untouched chunked-NLL baseline")
     t0 = time.time()
     nll0, nll0_ps = loop_nll(model, streams, rank=None)
@@ -248,24 +266,26 @@ def main():
             f"paired delta {100*d.mean():+.3f}% +- {100*ci:.3f}% "
             f"({ent['seconds']}s)")
 
-    # ---------------- gates ----------------
+def finish(results, t_start):
     g = {}
-    r16 = results["at_rest"]["16"]
-    g["at_rest_rank16_kl<=0.05"] = r16["mean_kl_nats"] <= 0.05
-    g["at_rest_rank16_top1>=0.95"] = r16["top1_agree"] >= 0.95
-    r32 = results["at_rest"]["32"]
-    g["kill_rank32_kl>0.2"] = r32["mean_kl_nats"] > 0.2
-    g["in_loop_rank32_ppl<=2pct"] = results["in_loop"]["32"]["rel_ppl_increase"] <= 0.02
-    g["in_loop_rank64_ppl>5pct_dead"] = results["in_loop"]["64"]["rel_ppl_increase"] > 0.05
+    if "16" in results.get("at_rest", {}):
+        r16 = results["at_rest"]["16"]
+        g["at_rest_rank16_kl<=0.05"] = r16["mean_kl_nats"] <= 0.05
+        g["at_rest_rank16_top1>=0.95"] = r16["top1_agree"] >= 0.95
+        r32 = results["at_rest"]["32"]
+        g["kill_rank32_kl>0.2"] = r32["mean_kl_nats"] > 0.2
+    if "32" in results.get("in_loop", {}):
+        g["in_loop_rank32_ppl<=2pct"] = results["in_loop"]["32"]["rel_ppl_increase"] <= 0.02
+        g["in_loop_rank64_ppl>5pct_dead"] = results["in_loop"]["64"]["rel_ppl_increase"] > 0.05
     results["gates"] = g
     results["wall_seconds"] = round(time.time() - t_start, 1)
 
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w") as f:
+    out = OUT.replace(".json", OUT_SUFFIX + ".json")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w") as f:
         json.dump(results, f, indent=1)
     log(json.dumps(g, indent=1))
-    log(f"DONE in {results['wall_seconds']}s -> {OUT}")
-    return 0
+    log(f"DONE in {results['wall_seconds']}s -> {out}")
 
 
 if __name__ == "__main__":
