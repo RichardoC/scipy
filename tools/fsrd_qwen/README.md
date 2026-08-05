@@ -14,7 +14,11 @@ Fuzzy Spectral Region Decomposition"*, [arXiv:2607.17990](https://arxiv.org/abs/
 
 ## Findings so far
 
-See `INVESTIGATION.md` for the full assessment. Two facts dominate the design:
+See `INVESTIGATION.md` for the full assessment, and **`RESULTS.md` for the
+executed pre-registered experiment** (section 5 of the investigation): the
+misfit gate passed, but the depth segmentation failed its BIC-consistency
+threshold and the fSRD-placed ridge exit head lost to uniform deeper
+placements by 20+ points — H0 accepted for the deployment-relevant claim. Two facts dominate the design:
 
 - **Qwen3.6 cannot be run here.** The only official Qwen3.6 checkpoints are
   27B (55.6 GB of safetensors) and 35B-A3B; there is no small variant. Both

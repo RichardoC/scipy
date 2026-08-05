@@ -1,0 +1,33 @@
+{
+ "depth_forecast": {
+  "n": 100,
+  "n_nonfinite": 0,
+  "n_zero_tail": 0,
+  "n_warnings": 8,
+  "warn_types": [
+   "RuntimeWarning"
+  ],
+  "fsrd_cos_mean": 0.2600623369216919,
+  "fsrd_cos_mean_valid": 0.2600623369216919,
+  "identity_cos_mean": 0.2899913489818573,
+  "fsrd_argmax_agree": 0.0,
+  "identity_argmax_agree": 0.03
+ },
+ "token_time": {
+  "n": 60,
+  "n_nonfinite": 0,
+  "n_zero_tail": 6,
+  "n_warnings": 7,
+  "warn_types": [
+   "RuntimeWarning"
+  ],
+  "in_window_err_median": 0.2740470812644495,
+  "fsrd_accept": 0.08333333333333333,
+  "identity_accept": 0.0,
+  "ridge_accept": 0.18333333333333332,
+  "fsrd_cos_mean": 0.5226158499717712,
+  "identity_cos_mean": 0.6574469208717346,
+  "ridge_cos_mean": 0.7755408883094788,
+  "ridge_lambda_rel": 0.01
+ }
+}
