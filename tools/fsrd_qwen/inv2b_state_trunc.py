@@ -104,7 +104,8 @@ def continue_chunks(model, past, ids_cont, p_memmap=None, p_argmax=None,
     store=False: compare against the reference; return (kl_sum, agree_sum, n).
     """
     B, T = ids_cont.shape
-    kl_sum, agree_sum, n_pos = 0.0, 0, 0
+    kl_stream = np.zeros(B)
+    agree_stream = np.zeros(B, dtype=np.int64)
     for c0 in range(0, T, CHUNK):
         chunk = ids_cont[:, c0:c0 + CHUNK]
         out = model(input_ids=chunk, past_key_values=past, use_cache=True)
@@ -120,12 +121,12 @@ def continue_chunks(model, past, ids_cont, p_memmap=None, p_argmax=None,
                     np.asarray(p_memmap[b, c0:c0 + CHUNK, :])).float()
                 p = torch.exp(logp)
                 kl = (p * (logp - logq[b])).sum(-1)          # (chunk,)
-                kl_sum += float(kl.sum())
-                agree_sum += int((logq[b].argmax(-1).numpy()
-                                  == p_argmax[b, c0:c0 + CHUNK]).sum())
-                n_pos += kl.numel()
+                kl_stream[b] += float(kl.sum())
+                agree_stream[b] += int((logq[b].argmax(-1).numpy()
+                                        == p_argmax[b, c0:c0 + CHUNK]).sum())
         del logq
-    return kl_sum, agree_sum, n_pos
+    return float(kl_stream.sum()), int(agree_stream.sum()), B * T, \
+        (kl_stream / T).tolist(), (agree_stream / T).tolist()
 
 
 @torch.no_grad()
@@ -137,7 +138,7 @@ def loop_nll(model, ids, rank=None):
     """
     B, T = ids.shape
     past = None
-    nll_sum, n_pos = 0.0, 0
+    nll_stream = np.zeros(B)
     prev_last_logits = None
     for c0 in range(0, T, CHUNK):
         chunk = ids[:, c0:c0 + CHUNK]
@@ -149,19 +150,18 @@ def loop_nll(model, ids, rank=None):
         del logits
         # within-chunk: position i predicts chunk token i+1
         tgt = chunk[:, 1:]
-        nll_sum += float(-torch.gather(
-            logp[:, :-1, :], 2, tgt.unsqueeze(-1)).sum())
-        n_pos += tgt.numel()
+        nll_stream += -torch.gather(
+            logp[:, :-1, :], 2, tgt.unsqueeze(-1)).sum(dim=(1, 2)).numpy()
         # across-boundary: previous chunk's last logits predict this chunk's first token
         if prev_last_logits is not None:
-            nll_sum += float(-torch.gather(
-                prev_last_logits, 1, chunk[:, :1]).sum())
-            n_pos += B
+            nll_stream += -torch.gather(
+                prev_last_logits, 1, chunk[:, :1]).squeeze(1).numpy()
         prev_last_logits = logp[:, -1, :].clone()
         del logp
         if rank is not None and c0 + CHUNK < T:
             truncate_states(past, rank)
-    return nll_sum / n_pos
+    per_stream = nll_stream / (T - 1)
+    return float(per_stream.mean()), per_stream.tolist()
 
 
 def main():
@@ -207,11 +207,12 @@ def main():
         t0 = time.time()
         past = prefill(model, ids_pre)          # identical fresh prefill
         n_lin = truncate_states(past, r) if r is not None else 0
-        kl_sum, agree_sum, n_pos = continue_chunks(
+        kl_sum, agree_sum, n_pos, kl_ps, agree_ps = continue_chunks(
             model, past, ids_cont, p_memmap, p_argmax, store=False)
         ent = {"rank": r, "n_lin_layers": n_lin,
                "mean_kl_nats": kl_sum / n_pos,
                "top1_agree": agree_sum / n_pos, "n_positions": n_pos,
+               "kl_per_stream": kl_ps, "top1_per_stream": agree_ps,
                "seconds": round(time.time() - t0, 1)}
         key = str(r) if r is not None else "untouched_control"
         results["at_rest"][key] = ent
@@ -224,19 +225,27 @@ def main():
     # ---------------- Part 2: in-loop periodic re-truncation --------------
     log("part2: untouched chunked-NLL baseline")
     t0 = time.time()
-    nll0 = loop_nll(model, streams, rank=None)
+    nll0, nll0_ps = loop_nll(model, streams, rank=None)
     ppl0 = float(np.exp(nll0))
     log(f"  untouched: nll={nll0:.4f} ppl={ppl0:.2f} ({time.time()-t0:.0f}s)")
-    results["in_loop"] = {"untouched": {"nll": nll0, "ppl": ppl0}}
+    results["in_loop"] = {"untouched": {"nll": nll0, "ppl": ppl0,
+                                        "nll_per_stream": nll0_ps}}
     for r in RANKS_LOOP:
         t0 = time.time()
-        nll = loop_nll(model, streams, rank=r)
+        nll, nll_ps = loop_nll(model, streams, rank=r)
         ppl = float(np.exp(nll))
+        # paired per-stream noise floor: rel ppl delta per stream + 95% CI
+        d = np.exp(np.array(nll_ps) - np.array(nll0_ps)) - 1.0
+        ci = 1.96 * float(d.std(ddof=1)) / np.sqrt(len(d))
         ent = {"rank": r, "nll": nll, "ppl": ppl,
                "rel_ppl_increase": ppl / ppl0 - 1.0,
+               "nll_per_stream": nll_ps,
+               "rel_ppl_delta_per_stream_mean": float(d.mean()),
+               "rel_ppl_delta_per_stream_ci95": ci,
                "seconds": round(time.time() - t0, 1)}
         results["in_loop"][str(r)] = ent
         log(f"part2 rank={r}: ppl={ppl:.3f} (+{100*ent['rel_ppl_increase']:.2f}%) "
+            f"paired delta {100*d.mean():+.3f}% +- {100*ci:.3f}% "
             f"({ent['seconds']}s)")
 
     # ---------------- gates ----------------

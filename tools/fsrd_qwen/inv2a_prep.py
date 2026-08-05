@@ -117,6 +117,16 @@ def main():
         t0 = time.time()
         W = np.load(path).astype(np.float32)
         R, C = W.shape
+        # sanity anchor (binding rule 7): GGUF's own Q4_K dequant of this very
+        # tensor, fetched in the earlier probe -- our B0 must land near it.
+        q4k = os.path.join(BASE, "states", "gguf", name + ".Q4_K.npy")
+        if os.path.exists(q4k):
+            Q = np.load(q4k).astype(np.float64)
+            relf = float(np.linalg.norm(W.astype(np.float64) - Q)
+                         / np.linalg.norm(W))
+            summary[f"_sanity_gguf_q4k_{name}_rel_frob"] = relf
+            log(f"  sanity: GGUF Q4_K vs BF16 rel-Frobenius on {name} = {relf:.5f}")
+            del Q
         w = im[name].astype(np.float64)
         assert w.size == C, (name, W.shape, w.size)
         w2 = w ** 2
@@ -162,6 +172,12 @@ def main():
                  zmap_unweighted=zu.astype(np.float32),
                  col_perm=col_perm, row_perm=row_perm,
                  w_sorted=ws, denom=denom)
+        # the exact SSE tables fully determine every later evaluation, so the
+        # fetched tensor can be deleted now (binding disk rule: transient, not
+        # resident). Set INV2A_KEEP=1 to retain for debugging.
+        if not os.environ.get("INV2A_KEEP"):
+            os.remove(path)
+            log(f"  deleted {path}")
 
         ent = {
             "shape": [R, C], "n_weights": R * C,
@@ -175,17 +191,8 @@ def main():
             f"(unw relF={ent['b0_rel_frob_unweighted']:.5f}) "
             f"B1 wRMSE={ent['b1_rel_rmse_weighted']:.5f} "
             f"[{ent['seconds']}s]")
-
-    # ---- sanity check: GGUF's own Q4_K error on blk.3.attn_q ----
-    q4k = os.path.join(BASE, "states", "gguf", "blk.3.attn_q.weight.Q4_K.npy")
-    bf16 = os.path.join(DIR, "blk.3.attn_q.weight.fp16.npy")
-    if os.path.exists(q4k) and os.path.exists(bf16):
-        A = np.load(bf16).astype(np.float64)
-        Q = np.load(q4k).astype(np.float64)
-        relf = float(np.linalg.norm(A - Q) / np.linalg.norm(A))
-        summary["_sanity_gguf_q4k_blk3_attn_q_rel_frob"] = relf
-        log(f"sanity: GGUF Q4_K vs BF16 rel-Frobenius on blk.3.attn_q = {relf:.5f}")
-        del A, Q
+        with open(OUT, "w") as f:      # checkpoint after every tensor
+            json.dump(summary, f, indent=1)
 
     with open(OUT, "w") as f:
         json.dump(summary, f, indent=1)
