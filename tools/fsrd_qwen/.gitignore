@@ -9,6 +9,11 @@ models/
 
 # Harvested activation .npy files (grows fast; GB scale)
 hidden/
+states/
+
+# Large intermediate result arrays from experiment steps
+results/*.npy
+results/*.npz
 
 __pycache__/
 *.pyc
