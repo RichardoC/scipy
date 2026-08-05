@@ -11,6 +11,11 @@ models/
 hidden/
 states/
 
+# gguf_fetch.py: cached GGUF headers (~11 MB each) and extracted tensors
+.gguf_cache/
+gguf_out/
+*.npy
+
 # Large intermediate result arrays from experiment steps
 results/*.npy
 results/*.npz
