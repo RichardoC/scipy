@@ -27,3 +27,8 @@ __pycache__/
 # evaluation bundle.  Not committed because it duplicates scipy/linalg/_fsrd.py,
 # which is the real subject of this branch.  See README.md for how to obtain it.
 fsrd_standalone.py
+
+# Pilot trajectory/activation dumps (regenerable)
+pilot_train_data/
+pilot_rep_data/
+pilot_layer_data/

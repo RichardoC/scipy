@@ -1,0 +1,79 @@
+{
+ "real_boundaries": [
+  46,
+  169,
+  355
+ ],
+ "tol": 25,
+ "fits": [
+  {
+   "tag": "shuffled_cols_rs1",
+   "n_regions": 1,
+   "boundaries": [],
+   "inwin": 0.09347042918072763,
+   "real_hits": 0
+  },
+  {
+   "tag": "shuffled_cols_rs2",
+   "n_regions": 1,
+   "boundaries": [],
+   "inwin": 0.0933543514620179,
+   "real_hits": 0
+  },
+  {
+   "tag": "shuffled_cols_rs3",
+   "n_regions": 1,
+   "boundaries": [],
+   "inwin": 0.09346309361522873,
+   "real_hits": 0
+  },
+  {
+   "tag": "surrogate_rs1",
+   "n_regions": 1,
+   "boundaries": [],
+   "inwin": 0.0019736830518727977,
+   "real_hits": 0
+  },
+  {
+   "tag": "surrogate_rs2",
+   "n_regions": 1,
+   "boundaries": [],
+   "inwin": 0.0019678485720925477,
+   "real_hits": 0
+  },
+  {
+   "tag": "surrogate_rs3",
+   "n_regions": 1,
+   "boundaries": [],
+   "inwin": 0.0019799508960339175,
+   "real_hits": 0
+  },
+  {
+   "tag": "randomwalk_rs1",
+   "n_regions": 8,
+   "boundaries": [
+    91,
+    239,
+    406,
+    608
+   ],
+   "inwin": 0.001511519246063242,
+   "real_hits": 0
+  },
+  {
+   "tag": "randomwalk_rs2",
+   "n_regions": 8,
+   "boundaries": [
+    91,
+    239,
+    406,
+    608
+   ],
+   "inwin": 0.001501836027881588,
+   "real_hits": 0
+  }
+ ],
+ "max_real_hits": 0,
+ "median_real_hits": 0.0,
+ "t4_consistency_void": false
+}
