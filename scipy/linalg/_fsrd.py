@@ -375,20 +375,23 @@ def _fit_node(a, node, dt, rcond, eta):
 def _region_transformed_data(a, node):
     """A region's own data block, in the space its local model lives in.
 
-    This is :math:`\\vartheta(\\varnothing_i(U) \\odot X_{In,i})` of [1]_ -- the
-    region's block of the data put through the same topological transform
-    `_fit_node` applied, so that it is directly comparable with the model term
+    This is :math:`\\vartheta(X_i)` of [1]_ -- the region's block of the data put
+    through the same topological transform `_fit_node` applied, so that it is
+    directly comparable with the model term
     :math:`\\Phi_i \\operatorname{diag}(b_i) T(\\omega_i)`.  It is therefore
     exactly the matrix the local operator was fitted to.
 
-    The membership does not multiply the data here.  The notation of [1]_ reads
-    as though it does, but its authors describe that symbol as denoting no more
-    than "the local data as represented for region ``i`` in the transformed
-    space", and the reference implementation they supplied evaluates both terms
-    of the error on the unweighted block.  Weighting it would compare a model
-    fitted to the unweighted block against a tapered copy of that block, so the
-    taper itself -- not any misfit -- would enter the error, double-counting the
-    region-size penalty `_model_wnrmse` already applies.
+    The membership does not multiply the data here.  :math:`X_i` keeps those
+    entries of the region's block whose membership reaches ``eta`` and zeros the
+    rest, leaving the entries it keeps unscaled; the membership weights the
+    fitted *model*, once, at global assembly.  Selecting each row's span above
+    ``eta``, as `_fit_node` does, is that same mask: a membership is a product
+    of sigmoids and so log-concave along a row, which makes each row's
+    superlevel set an interval with no sub-``eta`` cell inside it.  Weighting the
+    data instead would compare a model fitted to the unweighted block against a
+    tapered copy of that block, so the taper itself -- not any misfit -- would
+    enter the error, double-counting the region-size penalty `_model_wnrmse`
+    already applies.
     """
     m0, m1, t0, t1 = node.bbox
     block = a[m0:m1, t0:t1]

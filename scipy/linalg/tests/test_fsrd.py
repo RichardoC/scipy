@@ -568,8 +568,8 @@ class TestFSRDInternals:
 
         # the block scored is exactly the one the operator was fitted to: the
         # region's data through the same transform, membership *not* multiplied
-        # in (the authors' reference implementation weights only the per-region
-        # NRMSEs of `_model_wnrmse`, never the data inside one).
+        # in.  `X_i` masks the block at `eta` and leaves the surviving entries
+        # unscaled; the membership weights the model once, at global assembly.
         oblique = [nd for nd in leaves if nd.oblique]
         assert oblique, 'this data must produce an oblique region'
         for nd in oblique:
